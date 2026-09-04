@@ -1,0 +1,67 @@
+{
+  "id": "grounded-2",
+  "name": "Grounded 2",
+  "genre": "生存",
+  "color": "#527A8F",
+  "adapterLabel": "UE Input.ini (Augusta)",
+  "configPathLabel": "%LOCALAPPDATA%/Augusta/Saved/Config/Windows/Input.ini",
+  "configFormat": "ini",
+  "configFileName": "Input.ini",
+  "configRelativePath": "Input.ini",
+  "detectionType": "localappdata",
+  "localAppDataSubPath": "Augusta\\Saved\\Config\\Windows",
+  "steamAppId": "2836510",
+  "installPaths": [
+    "%LOCALAPPDATA%\\Augusta\\Saved\\Config\\Windows",
+    "%USERPROFILE%\\AppData\\Local\\Augusta\\Saved\\Config\\Windows"
+  ],
+  "modes": [
+    { "id": "default", "name": "默认", "section": "/Script/Engine.InputSettings" }
+  ],
+  "defaultMode": "default",
+  "supportedActions": [
+    "forward", "left", "back", "right",
+    "primary", "secondary",
+    "ability1", "ability2", "ability3",
+    "interact", "jump", "sprint", "crouch",
+    "inventory1", "map"
+  ],
+  "nativeNames": {
+    "forward": "Axis_MoveForward_Pos",
+    "left": "Axis_MoveRight_Neg",
+    "back": "Axis_MoveForward_Neg",
+    "right": "Axis_MoveRight_Pos",
+    "primary": "Action_Attack",
+    "secondary": "Action_Aim",
+    "ability1": "Action_SwitchWeapon",
+    "ability2": "Action_Throw",
+    "ability3": "Action_Drop",
+    "interact": "Action_Interact",
+    "jump": "Action_Jump",
+    "sprint": "Action_Sprint",
+    "crouch": "Action_Crouch",
+    "inventory1": "Action_Hotbar1",
+    "map": "Action_Map"
+  },
+  "defaults": {
+    "forward": "W",
+    "left": "A",
+    "back": "S",
+    "right": "D",
+    "primary": "Mouse 1",
+    "secondary": "Mouse 2",
+    "ability1": "Q",
+    "ability2": "G",
+    "ability3": "F",
+    "interact": "E",
+    "jump": "Space",
+    "sprint": "Left Shift",
+    "crouch": "Left Ctrl",
+    "inventory1": "1",
+    "map": "M"
+  },
+  "canWrite": true,
+  "applyMethod": "restart",
+  "cloudSync": false,
+  "notes": "Grounded 2 内部代号 Augusta，UE 游戏。Input.ini 默认不存在，需手动创建。键位命名待验证。"
+}

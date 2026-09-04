@@ -1,0 +1,61 @@
+{
+  "id": "dont-starve",
+  "name": "饥荒",
+  "genre": "生存",
+  "color": "#6B8F52",
+  "adapterLabel": "Klei settings.ini",
+  "configPathLabel": "Documents / Klei / DoNotStarveTogether / settings.ini",
+  "configFormat": "ini",
+  "configFileName": "settings.ini",
+  "configRelativePath": "settings.ini",
+  "detectionType": "documents",
+  "documentsSubPath": "Klei\\DoNotStarveTogether",
+  "steamAppId": "322330",
+  "installPaths": [
+    "%USERPROFILE%\\Documents\\Klei\\DoNotStarveTogether",
+    "%USERPROFILE%\\Documents\\Klei\\DoNotStarve"
+  ],
+  "modes": [
+    { "id": "default", "name": "默认", "section": "controls" }
+  ],
+  "defaultMode": "default",
+  "supportedActions": [
+    "forward", "left", "back", "right",
+    "primary", "secondary",
+    "ability1", "ability2", "ability3", "ultimate",
+    "interact", "inventory1", "map"
+  ],
+  "nativeNames": {
+    "forward": "move_up",
+    "left": "move_left",
+    "back": "move_down",
+    "right": "move_right",
+    "primary": "primary_action",
+    "secondary": "secondary_action",
+    "ability1": "craft",
+    "ability2": "inventory",
+    "ability3": "emote",
+    "ultimate": "map_zoom",
+    "interact": "interact",
+    "inventory1": "hotbar_1",
+    "map": "map"
+  },
+  "defaults": {
+    "forward": "W",
+    "left": "A",
+    "back": "S",
+    "right": "D",
+    "primary": "Mouse 1",
+    "secondary": "Mouse 2",
+    "ability1": "C",
+    "ability2": "I",
+    "ability3": "R",
+    "ultimate": "V",
+    "interact": "Space",
+    "inventory1": "1",
+    "map": "M"
+  },
+  "canWrite": true,
+  "applyMethod": "restart",
+  "cloudSync": false
+}

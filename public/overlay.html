@@ -1,0 +1,743 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Keyforge Overlay</title>
+  <style>
+    :root {
+      --kb-scale: 1;
+      --kb-opacity: 1;
+      --kb-highlight: #00d4ff;
+      --kb-highlight-opacity: 1;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      background: transparent;
+      overflow: hidden;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    #overlay { width: 100%; height: 100%; display: flex; }
+    .drag-handle {
+      -webkit-app-region: drag;
+      app-region: drag;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      padding: 8px 8px 8px 80px;
+    }
+    body.locked .drag-handle {
+      -webkit-app-region: no-drag;
+      app-region: no-drag;
+    }
+
+    /* ===== Mode: keys-only ===== */
+    .mode-keys-only .drag-handle { align-items: flex-end; justify-content: flex-start; }
+    .keys-only-content { display: flex; flex-direction: column; gap: 6px; }
+    .current-keys { display: flex; gap: 5px; flex-wrap: wrap; min-height: 44px; align-items: center; }
+    .keycap {
+      display: inline-flex; align-items: center; justify-content: center;
+      min-width: 42px; height: 42px; padding: 0 12px;
+      border-radius: 7px; background: rgba(15, 23, 42, 0.92);
+      border: 1px solid rgba(0, 212, 255, 0.5); border-bottom: 3px solid #00d4ff;
+      color: #00d4ff; font-size: 13px; font-weight: 700;
+      box-shadow: 0 0 10px rgba(0, 212, 255, 0.3);
+      animation: keyPress 0.12s ease-out;
+    }
+    .keycap.is-mouse { border-color: rgba(74, 222, 128, 0.5); border-bottom-color: #4ade80; color: #4ade80; box-shadow: 0 0 10px rgba(74, 222, 128, 0.3); }
+    .placeholder { color: rgba(255, 255, 255, 0.3); font-size: 12px; font-style: italic; }
+    @keyframes keyPress { 0% { transform: scale(0.9); opacity: 0.7; } 100% { transform: scale(1); opacity: 1; } }
+
+    /* ===== Common keyboard styles (using image assets) ===== */
+    .keyboard-wrapper { display: flex; flex-direction: column; gap: 10px; }
+    .keyboard { display: flex; flex-direction: column; gap: 2px; transform: scale(var(--kb-scale, 1)); transform-origin: top left; }
+    .custom-keyboard { display: flex; flex-direction: column; gap: 2px; transform: scale(var(--kb-scale, 1)); transform-origin: top left; }
+    .kb-row { display: flex; gap: 2px; flex-direction: row; }
+    .kb-key {
+      position: relative;
+      height: 32px;
+      border-radius: 4px;
+      background: transparent;
+      border: none;
+      display: flex; align-items: center; justify-content: center;
+      transition: all 0.08s; flex-shrink: 0;
+      overflow: visible;
+    }
+    .kb-key img {
+      width: 100%; height: 100%; object-fit: fill;
+      opacity: var(--kb-opacity, 1); transition: all 0.08s;
+      filter: brightness(0.9);
+    }
+    .kb-key.is-pressed {
+      filter: none;
+    }
+    .kb-key.is-pressed img { opacity: var(--kb-highlight-opacity, 1); filter: drop-shadow(0 0 calc(6px * var(--kb-highlight-opacity, 1)) var(--kb-highlight)) brightness(calc(1 + 0.2 * var(--kb-highlight-opacity, 1))); }
+    .kb-key .key-label {
+      position: absolute; color: rgba(255,255,255,0.5); font-size: 8px; font-weight: 600;
+    }
+    .kb-key.is-pressed .key-label { color: var(--kb-highlight); }
+    /* Key widths in units (1u = 32px + 2px gap = 34px) */
+    .u-1 { width: 32px; }
+    .u-125 { width: 42px; }
+    .u-15 { width: 52px; }
+    .u-175 { width: 62px; }
+    .u-2 { width: 72px; }
+    .u-225 { width: 82px; }
+    .u-275 { width: 102px; }
+    .u-6 { width: 222px; }
+    .u-625 { width: 232px; }
+    /* Row offsets for proper keyboard stagger */
+    .offset-125 { margin-left: 12px; }
+    .offset-25 { margin-left: 22px; }
+    .offset-375 { margin-left: 32px; }
+
+    /* Mouse display - single large mouse, switch image on press */
+    .mouse-panel {
+      display: flex; flex-direction: row; align-items: center; justify-content: center;
+      padding: 4px 0; gap: 8px; position: relative;
+    }
+    .mouse-display {
+      position: relative;
+      width: var(--mouse-width, 200px);
+      height: var(--mouse-height, 220px);
+      top: var(--mouse-y, 40px);
+      left: var(--mouse-x, 0px);
+      flex-shrink: 0;
+    }
+    .mouse-display img {
+      width: 100%; height: 100%; object-fit: contain;
+      object-position: center bottom;
+      opacity: 0.6; transition: all 0.08s;
+      display: block;
+    }
+    .mouse-display.has-press img {
+      opacity: 1;
+    }
+    .mouse-side-badges {
+      position: absolute;
+      top: 40px;
+      left: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .mouse-side-badge {
+      width: 28px; height: 28px; border-radius: 50%;
+      background: #f59e0b; color: #000;
+      font-size: 13px; font-weight: 700;
+      display: none; align-items: center; justify-content: center;
+    }
+    .mouse-side-badge.is-pressed { display: flex; }
+
+    /* ===== Mode: game ===== */
+    .mode-game .drag-handle { align-items: flex-end; justify-content: flex-start; }
+    .game-content { display: flex; flex-direction: row; gap: 12px; align-items: flex-end; }
+
+    /* ===== Mode: full ===== */
+    .mode-full .drag-handle { align-items: flex-end; justify-content: flex-start; }
+    .full-content { display: flex; flex-direction: row; gap: 12px; align-items: flex-end; }
+
+    /* ===== Mode: custom ===== */
+    .mode-custom .drag-handle { align-items: flex-end; justify-content: flex-start; }
+    .custom-content { display: flex; flex-direction: row; gap: 12px; align-items: flex-end; }
+    .custom-content .mouse-panel { display: none; }
+    .custom-content.show-mouse .mouse-panel { display: flex; }
+    /* Global mouse visibility control - works for ALL modes */
+    body.hide-mouse .mouse-img,
+    body.hide-mouse .mouse-panel,
+    body.hide-mouse .mouse-device-container {
+      display: none !important;
+    }
+
+    .settings-btn {
+      -webkit-app-region: no-drag; app-region: no-drag;
+      position: fixed; top: 4px; right: 4px; width: 18px; height: 18px;
+      border-radius: 4px; background: rgba(15, 23, 42, 0.8);
+      border: 1px solid rgba(255, 255, 255, 0.2); color: rgba(255, 255, 255, 0.6);
+      font-size: 10px; cursor: pointer; display: flex; align-items: center; justify-content: center;
+      opacity: 0; transition: opacity 0.2s; z-index: 100;
+    }
+    body:hover .settings-btn { opacity: 1; }
+    .settings-btn:hover { background: rgba(0, 212, 255, 0.2); border-color: rgba(0, 212, 255, 0.5); color: #00d4ff; }
+
+    /* Overlay corner controls (lock + eye) - positioned next to keyboard */
+    .overlay-corner-controls {
+      position: absolute;
+      display: flex; flex-direction: column; gap: 6px;
+      z-index: 200; -webkit-app-region: no-drag; app-region: no-drag;
+      opacity: 0.15;
+      transition: opacity 0.2s ease;
+    }
+    .overlay-corner-controls:hover {
+      opacity: 1;
+    }
+    .corner-btn {
+      width: 28px; height: 28px; border-radius: 6px;
+      background: rgba(15, 23, 42, 0.7);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: rgba(255, 255, 255, 0.6);
+      font-size: 14px; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: all 0.15s;
+    }
+    .corner-btn:hover {
+      background: rgba(0, 212, 255, 0.15);
+      border-color: rgba(0, 212, 255, 0.4);
+      color: #00d4ff;
+    }
+    .corner-btn.is-active {
+      background: rgba(0, 212, 255, 0.2);
+      border-color: #00d4ff;
+      color: #00d4ff;
+    }
+    .corner-btn.lock-btn.locked {
+      background: rgba(245, 158, 11, 0.2);
+      border-color: #f59e0b;
+      color: #f59e0b;
+    }
+    /* When locked, disable drag and selection */
+    body.locked {
+      -webkit-user-select: none;
+      user-select: none;
+      pointer-events: none;
+    }
+    body.locked .overlay-corner-controls,
+    body.locked .settings-btn {
+      pointer-events: auto;
+    }
+    body.locked .drag-handle {
+      -webkit-app-region: no-drag;
+      app-region: no-drag;
+    }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <div id="overlay" class="mode-keys-only">
+    <div class="drag-handle">
+      <!-- Mode: keys-only -->
+      <div class="keys-only-content mode-keys-only-content">
+        <div class="current-keys" id="currentKeys">
+          <span class="placeholder">等待按键...</span>
+        </div>
+        <div class="mouse-panel">
+          <div class="mouse-display">
+            <img class="mouse-img" src="keyboard-assets/mouse/Mouse_White.png" alt="Mouse"/>
+            <div class="mouse-side-badges">
+              <div class="mouse-side-badge" data-mouse="x1">1</div>
+              <div class="mouse-side-badge" data-mouse="x2">2</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Mode: game (half keyboard) -->
+      <div class="game-content mode-game-content hidden">
+        <div class="keyboard">
+          <!-- Row 1: Esc, 1-5 -->
+          <div class="kb-row">
+            <div class="kb-key u-1" data-key="Escape"><img src="keyboard-assets/keys/escape_white.png" alt="Esc"/></div>
+            <div class="kb-key u-1" data-key="1"><img src="keyboard-assets/keys/1_white.png" alt="1"/></div>
+            <div class="kb-key u-1" data-key="2"><img src="keyboard-assets/keys/2_white.png" alt="2"/></div>
+            <div class="kb-key u-1" data-key="3"><img src="keyboard-assets/keys/3_white.png" alt="3"/></div>
+            <div class="kb-key u-1" data-key="4"><img src="keyboard-assets/keys/4_white.png" alt="4"/></div>
+            <div class="kb-key u-1" data-key="5"><img src="keyboard-assets/keys/5_white.png" alt="5"/></div>
+          </div>
+          <!-- Row 2: Tab, Q-T (offset 0.25u) -->
+          <div class="kb-row">
+            <div class="kb-key u-15" data-key="Tab"><img src="keyboard-assets/keys/tab_white.png" alt="Tab"/></div>
+            <div class="kb-key u-1" data-key="Q"><img src="keyboard-assets/keys/q_white.png" alt="Q"/></div>
+            <div class="kb-key u-1" data-key="W"><img src="keyboard-assets/keys/w_white.png" alt="W"/></div>
+            <div class="kb-key u-1" data-key="E"><img src="keyboard-assets/keys/e_white.png" alt="E"/></div>
+            <div class="kb-key u-1" data-key="R"><img src="keyboard-assets/keys/r_white.png" alt="R"/></div>
+            <div class="kb-key u-1" data-key="T"><img src="keyboard-assets/keys/t_white.png" alt="T"/></div>
+          </div>
+          <!-- Row 3: Caps, A-G (offset 0.5u) -->
+          <div class="kb-row">
+            <div class="kb-key u-175" data-key="CapsLock"><img src="keyboard-assets/keys/caps_white.png" alt="Caps"/></div>
+            <div class="kb-key u-1" data-key="A"><img src="keyboard-assets/keys/a_white.png" alt="A"/></div>
+            <div class="kb-key u-1" data-key="S"><img src="keyboard-assets/keys/s_white.png" alt="S"/></div>
+            <div class="kb-key u-1" data-key="D"><img src="keyboard-assets/keys/d_white.png" alt="D"/></div>
+            <div class="kb-key u-1" data-key="F"><img src="keyboard-assets/keys/f_white.png" alt="F"/></div>
+            <div class="kb-key u-1" data-key="G"><img src="keyboard-assets/keys/g_white.png" alt="G"/></div>
+          </div>
+          <!-- Row 4: Shift, Z-B (offset 0.75u) -->
+          <div class="kb-row">
+            <div class="kb-key u-225" data-key="Shift"><img src="keyboard-assets/keys/shift_white.png" alt="Shift"/></div>
+            <div class="kb-key u-1" data-key="Z"><img src="keyboard-assets/keys/z_white.png" alt="Z"/></div>
+            <div class="kb-key u-1" data-key="X"><img src="keyboard-assets/keys/x_white.png" alt="X"/></div>
+            <div class="kb-key u-1" data-key="C"><img src="keyboard-assets/keys/c_white.png" alt="C"/></div>
+            <div class="kb-key u-1" data-key="V"><img src="keyboard-assets/keys/v_white.png" alt="V"/></div>
+            <div class="kb-key u-1" data-key="B"><img src="keyboard-assets/keys/b_white.png" alt="B"/></div>
+          </div>
+          <!-- Row 5: Ctrl, Win, Alt, half Space -->
+          <div class="kb-row">
+            <div class="kb-key u-125" data-key="Control"><img src="keyboard-assets/keys/ctrl_white.png" alt="Ctrl"/></div>
+            <div class="kb-key u-125" data-key="Meta"><img src="keyboard-assets/keys/windows_white.png" alt="Win"/></div>
+            <div class="kb-key u-125" data-key="Alt"><img src="keyboard-assets/keys/alt_white.png" alt="Alt"/></div>
+            <div class="kb-key u-275" data-key="Space"><img src="keyboard-assets/keys/space_lg_white.png" alt="Space"/></div>
+          </div>
+        </div>
+        <!-- Mouse panel -->
+        <div class="mouse-panel">
+          <div class="mouse-display">
+            <img class="mouse-img" src="keyboard-assets/mouse/Mouse_White.png" alt="Mouse"/>
+            <div class="mouse-side-badges">
+              <div class="mouse-side-badge" data-mouse="x1">1</div>
+              <div class="mouse-side-badge" data-mouse="x2">2</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Mode: full keyboard -->
+      <div class="full-content mode-full-content hidden">
+        <div class="keyboard">
+          <!-- Row 1: Esc, 1-0, -, =, Backspace -->
+          <div class="kb-row">
+            <div class="kb-key u-1" data-key="Escape"><img src="keyboard-assets/keys/escape_white.png" alt="Esc"/></div>
+            <div class="kb-key u-1" data-key="1"><img src="keyboard-assets/keys/1_white.png" alt="1"/></div>
+            <div class="kb-key u-1" data-key="2"><img src="keyboard-assets/keys/2_white.png" alt="2"/></div>
+            <div class="kb-key u-1" data-key="3"><img src="keyboard-assets/keys/3_white.png" alt="3"/></div>
+            <div class="kb-key u-1" data-key="4"><img src="keyboard-assets/keys/4_white.png" alt="4"/></div>
+            <div class="kb-key u-1" data-key="5"><img src="keyboard-assets/keys/5_white.png" alt="5"/></div>
+            <div class="kb-key u-1" data-key="6"><img src="keyboard-assets/keys/6_white.png" alt="6"/></div>
+            <div class="kb-key u-1" data-key="7"><img src="keyboard-assets/keys/7_white.png" alt="7"/></div>
+            <div class="kb-key u-1" data-key="8"><img src="keyboard-assets/keys/8_white.png" alt="8"/></div>
+            <div class="kb-key u-1" data-key="9"><img src="keyboard-assets/keys/9_white.png" alt="9"/></div>
+            <div class="kb-key u-1" data-key="0"><img src="keyboard-assets/keys/0_white.png" alt="0"/></div>
+            <div class="kb-key u-1" data-key="-"><img src="keyboard-assets/keys/minus_white.png" alt="-"/></div>
+            <div class="kb-key u-1" data-key="="><img src="keyboard-assets/keys/equals_white.png" alt="="/></div>
+            <div class="kb-key u-2" data-key="Backspace"><img src="keyboard-assets/keys/backspace_white.png" alt="Back"/></div>
+          </div>
+          <!-- Row 2: Tab, Q-P, [, ], \ (offset 0.25u) -->
+          <div class="kb-row">
+            <div class="kb-key u-15" data-key="Tab"><img src="keyboard-assets/keys/tab_white.png" alt="Tab"/></div>
+            <div class="kb-key u-1" data-key="Q"><img src="keyboard-assets/keys/q_white.png" alt="Q"/></div>
+            <div class="kb-key u-1" data-key="W"><img src="keyboard-assets/keys/w_white.png" alt="W"/></div>
+            <div class="kb-key u-1" data-key="E"><img src="keyboard-assets/keys/e_white.png" alt="E"/></div>
+            <div class="kb-key u-1" data-key="R"><img src="keyboard-assets/keys/r_white.png" alt="R"/></div>
+            <div class="kb-key u-1" data-key="T"><img src="keyboard-assets/keys/t_white.png" alt="T"/></div>
+            <div class="kb-key u-1" data-key="Y"><img src="keyboard-assets/keys/y_white.png" alt="Y"/></div>
+            <div class="kb-key u-1" data-key="U"><img src="keyboard-assets/keys/u_white.png" alt="U"/></div>
+            <div class="kb-key u-1" data-key="I"><img src="keyboard-assets/keys/i_white.png" alt="I"/></div>
+            <div class="kb-key u-1" data-key="O"><img src="keyboard-assets/keys/o_white.png" alt="O"/></div>
+            <div class="kb-key u-1" data-key="P"><img src="keyboard-assets/keys/p_white.png" alt="P"/></div>
+            <div class="kb-key u-1" data-key="["><img src="keyboard-assets/keys/bracket-open_white.png" alt="["/></div>
+            <div class="kb-key u-1" data-key="]"><img src="keyboard-assets/keys/bracket-close_white.png" alt="]"/></div>
+            <div class="kb-key u-1" data-key="\"><img src="keyboard-assets/keys/backslash_white.png" alt="\"/></div>
+          </div>
+          <!-- Row 3: Caps, A-;, ', Enter (offset 0.5u) -->
+          <div class="kb-row">
+            <div class="kb-key u-175" data-key="CapsLock"><img src="keyboard-assets/keys/caps_white.png" alt="Caps"/></div>
+            <div class="kb-key u-1" data-key="A"><img src="keyboard-assets/keys/a_white.png" alt="A"/></div>
+            <div class="kb-key u-1" data-key="S"><img src="keyboard-assets/keys/s_white.png" alt="S"/></div>
+            <div class="kb-key u-1" data-key="D"><img src="keyboard-assets/keys/d_white.png" alt="D"/></div>
+            <div class="kb-key u-1" data-key="F"><img src="keyboard-assets/keys/f_white.png" alt="F"/></div>
+            <div class="kb-key u-1" data-key="G"><img src="keyboard-assets/keys/g_white.png" alt="G"/></div>
+            <div class="kb-key u-1" data-key="H"><img src="keyboard-assets/keys/h_white.png" alt="H"/></div>
+            <div class="kb-key u-1" data-key="J"><img src="keyboard-assets/keys/j_white.png" alt="J"/></div>
+            <div class="kb-key u-1" data-key="K"><img src="keyboard-assets/keys/k_white.png" alt="K"/></div>
+            <div class="kb-key u-1" data-key="L"><img src="keyboard-assets/keys/l_white.png" alt="L"/></div>
+            <div class="kb-key u-1" data-key=";"><img src="keyboard-assets/keys/semicolon_white.png" alt=";"/></div>
+            <div class="kb-key u-1" data-key="'"><img src="keyboard-assets/keys/apostrophe_white.png" alt="'"/></div>
+            <div class="kb-key u-225" data-key="Enter"><img src="keyboard-assets/keys/enter_white.png" alt="Enter"/></div>
+          </div>
+          <!-- Row 4: Shift, Z-/, Shift(small), Up arrow -->
+          <div class="kb-row">
+            <div class="kb-key u-225" data-key="Shift"><img src="keyboard-assets/keys/shift_white.png" alt="Shift"/></div>
+            <div class="kb-key u-1" data-key="Z"><img src="keyboard-assets/keys/z_white.png" alt="Z"/></div>
+            <div class="kb-key u-1" data-key="X"><img src="keyboard-assets/keys/x_white.png" alt="X"/></div>
+            <div class="kb-key u-1" data-key="C"><img src="keyboard-assets/keys/c_white.png" alt="C"/></div>
+            <div class="kb-key u-1" data-key="V"><img src="keyboard-assets/keys/v_white.png" alt="V"/></div>
+            <div class="kb-key u-1" data-key="B"><img src="keyboard-assets/keys/b_white.png" alt="B"/></div>
+            <div class="kb-key u-1" data-key="N"><img src="keyboard-assets/keys/n_white.png" alt="N"/></div>
+            <div class="kb-key u-1" data-key="M"><img src="keyboard-assets/keys/m_white.png" alt="M"/></div>
+            <div class="kb-key u-1" data-key=","><img src="keyboard-assets/keys/comma_white.png" alt=","/></div>
+            <div class="kb-key u-1" data-key="."><img src="keyboard-assets/keys/full-stop_white.png" alt="."/></div>
+            <div class="kb-key u-1" data-key="/"><img src="keyboard-assets/keys/slash_white.png" alt="/"/></div>
+            <div class="kb-key u-15" data-key="Shift"><img src="keyboard-assets/keys/shift_white.png" alt="Shift"/></div>
+            <div class="kb-key u-1" data-key="ArrowUp"><img src="keyboard-assets/keys/arrow-up_white.png" alt="↑"/></div>
+          </div>
+          <!-- Row 5: Ctrl, Win, Alt, Space, Alt, Ctrl(small), Left, Down, Right arrows -->
+          <div class="kb-row">
+            <div class="kb-key u-125" data-key="Control"><img src="keyboard-assets/keys/ctrl_white.png" alt="Ctrl"/></div>
+            <div class="kb-key u-125" data-key="Meta"><img src="keyboard-assets/keys/windows_white.png" alt="Win"/></div>
+            <div class="kb-key u-125" data-key="Alt"><img src="keyboard-assets/keys/alt_white.png" alt="Alt"/></div>
+            <div class="kb-key u-625" data-key="Space"><img src="keyboard-assets/keys/space_lg_white.png" alt="Space"/></div>
+            <div class="kb-key u-125" data-key="Alt"><img src="keyboard-assets/keys/alt_white.png" alt="Alt"/></div>
+            <div class="kb-key u-1" data-key="Control"><img src="keyboard-assets/keys/ctrl_white.png" alt="Ctrl"/></div>
+            <div class="kb-key u-1" data-key="ArrowLeft"><img src="keyboard-assets/keys/arrow-left_white.png" alt="←"/></div>
+            <div class="kb-key u-1" data-key="ArrowDown"><img src="keyboard-assets/keys/arrow-down_white.png" alt="↓"/></div>
+            <div class="kb-key u-1" data-key="ArrowRight"><img src="keyboard-assets/keys/arrow-right_white.png" alt="→"/></div>
+          </div>
+        </div>
+        <!-- Mouse panel -->
+        <div class="mouse-panel">
+          <div class="mouse-display">
+            <img class="mouse-img" src="keyboard-assets/mouse/Mouse_White.png" alt="Mouse"/>
+            <div class="mouse-side-badges">
+              <div class="mouse-side-badge" data-mouse="x1">1</div>
+              <div class="mouse-side-badge" data-mouse="x2">2</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Mode: custom keyboard area -->
+      <div class="custom-content mode-custom-content hidden">
+        <div class="keyboard">
+          <div class="custom-keyboard"></div>
+        </div>
+        <!-- Mouse panel (optional) -->
+        <div class="mouse-panel">
+          <div class="mouse-display">
+            <img class="mouse-img" src="keyboard-assets/mouse/Mouse_White.png" alt="Mouse"/>
+            <div class="mouse-side-badges">
+              <div class="mouse-side-badge" data-mouse="x1">1</div>
+              <div class="mouse-side-badge" data-mouse="x2">2</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="overlay-corner-controls overlay-corner-left">
+    <button class="corner-btn lock-btn" id="lockBtn" title="锁定/解锁拖动">🔒</button>
+    <button class="corner-btn eye-btn" id="eyeBtn" title="隐藏悬浮窗">👁</button>
+  </div>
+  <button class="settings-btn" id="closeBtn" title="关闭悬浮窗">×</button>
+
+  <script>
+    const { ipcRenderer } = require('electron')
+    let pressedKeys = new Set()
+    let pressedMouse = new Set()
+    let currentMode = 'keys-only'
+
+    const KEY_ALIASES = {
+      'Escape': 'Esc', 'CapsLock': 'Caps', 'Meta': 'Win', 'Control': 'Ctrl',
+      'LShift': 'Shift', 'RShift': 'Shift', 'LCtrl': 'Ctrl', 'RCtrl': 'Ctrl',
+      'LAlt': 'Alt', 'RAlt': 'Alt', 'LWin': 'Win', 'RWin': 'Win',
+    }
+    function normalizeKey(key) { return KEY_ALIASES[key] || key }
+
+    const MOUSE_IMAGES = {
+      default: 'keyboard-assets/mouse/Mouse_White.png',
+      left: 'keyboard-assets/mouse/LeftClick_White.png',
+      right: 'keyboard-assets/mouse/RightClick_White.png',
+      middle: 'keyboard-assets/mouse/MiddleClick_White.png',
+    }
+
+    function updateHighlight() {
+      document.querySelectorAll('.kb-key').forEach(el => {
+        const key = el.dataset.key
+        if (key && pressedKeys.has(normalizeKey(key))) {
+          el.classList.add('is-pressed')
+        } else {
+          el.classList.remove('is-pressed')
+        }
+      })
+      // Switch mouse image based on pressed button (priority: left > right > middle)
+      let mouseImg = getAssetPath(MOUSE_IMAGES.default)
+      if (pressedMouse.has('left')) mouseImg = getAssetPath(MOUSE_IMAGES.left)
+      else if (pressedMouse.has('right')) mouseImg = getAssetPath(MOUSE_IMAGES.right)
+      else if (pressedMouse.has('middle')) mouseImg = getAssetPath(MOUSE_IMAGES.middle)
+      document.querySelectorAll('.mouse-img').forEach(img => {
+        if (img.src !== mouseImg && !img.src.endsWith(mouseImg)) {
+          img.src = mouseImg
+        }
+      })
+      // Update side badges (x1/x2) - only show when pressed
+      document.querySelectorAll('.mouse-side-badge').forEach(el => {
+        const btn = el.dataset.mouse
+        if (btn && pressedMouse.has(btn)) {
+          el.classList.add('is-pressed')
+        } else {
+          el.classList.remove('is-pressed')
+        }
+      })
+      // Update mouse display overall brightness
+      document.querySelectorAll('.mouse-display').forEach(el => {
+        if (pressedMouse.size > 0) {
+          el.classList.add('has-press')
+        } else {
+          el.classList.remove('has-press')
+        }
+      })
+    }
+
+    function renderKeysOnly() {
+      const currentKeysEl = document.getElementById('currentKeys')
+      const allPressed = [
+        ...Array.from(pressedKeys).map(k => ({ type: 'keyboard', key: k })),
+        ...Array.from(pressedMouse).map(b => ({ type: 'mouse', button: b })),
+      ]
+      if (allPressed.length === 0) {
+        currentKeysEl.innerHTML = '<span class="placeholder">等待按键...</span>'
+      } else {
+        currentKeysEl.innerHTML = allPressed.map(item => {
+          if (item.type === 'keyboard') {
+            return `<span class="keycap">${item.key === 'Space' ? '空格' : item.key}</span>`
+          } else {
+            const labels = { left: '左键', right: '右键', middle: '中键', x1: '侧键1', x2: '侧键2' }
+            return `<span class="keycap is-mouse">${labels[item.button] || item.button}</span>`
+          }
+        }).join('')
+      }
+    }
+
+    function render() {
+      if (currentMode === 'keys-only') renderKeysOnly()
+      else if (currentMode === 'custom') renderCustomKeyboard()
+      else updateHighlight()
+    }
+
+    function setMode(mode) {
+      currentMode = mode
+      const overlay = document.getElementById('overlay')
+      overlay.className = overlay.className.replace(/mode-\w+/, `mode-${mode}`)
+      document.querySelector('.mode-keys-only-content').classList.toggle('hidden', mode !== 'keys-only')
+      document.querySelector('.mode-game-content').classList.toggle('hidden', mode !== 'game')
+      document.querySelector('.mode-full-content').classList.toggle('hidden', mode !== 'full')
+      document.querySelector('.mode-custom-content').classList.toggle('hidden', mode !== 'custom')
+      if (mode === 'game') ipcRenderer.send('overlay-resize', { width: 540, height: 300 })
+      else if (mode === 'full') ipcRenderer.send('overlay-resize', { width: 880, height: 300 })
+      else if (mode === 'custom') ipcRenderer.send('overlay-resize', { width: 880, height: 280 })
+      else ipcRenderer.send('overlay-resize', { width: 480, height: 340 })
+      setTimeout(updateControlPosition, 50)
+    }
+
+    // Position lock/eye buttons next to the keyboard left edge, aligned with top
+    function updateControlPosition() {
+      const controls = document.querySelector('.overlay-corner-controls')
+      if (!controls) return
+      // Find the visible keyboard element
+      const visibleContent = document.querySelector('.mode-game-content:not(.hidden), .mode-full-content:not(.hidden), .mode-custom-content:not(.hidden)')
+      if (visibleContent) {
+        const keyboard = visibleContent.querySelector('.keyboard, .custom-keyboard')
+        if (keyboard) {
+          const kbRect = keyboard.getBoundingClientRect()
+          const overlayRect = document.getElementById('overlay').getBoundingClientRect()
+          const left = kbRect.left - overlayRect.left - 50
+          const top = kbRect.top - overlayRect.top
+          controls.style.left = Math.max(0, left) + 'px'
+          controls.style.top = top + 'px'
+          controls.style.display = 'flex'
+          return
+        }
+      }
+      // For keys-only mode, position next to the current keys display
+      const currentKeys = document.querySelector('.current-keys')
+      if (currentKeys) {
+        const rect = currentKeys.getBoundingClientRect()
+        const overlayRect = document.getElementById('overlay').getBoundingClientRect()
+        controls.style.left = Math.max(0, rect.left - overlayRect.left - 50) + 'px'
+        controls.style.top = (rect.top - overlayRect.top) + 'px'
+        controls.style.display = 'flex'
+      }
+    }
+
+    window.addEventListener('resize', () => setTimeout(updateControlPosition, 100))
+
+    function setShowMouse(show) {
+      // Control mouse visibility for ALL modes
+      if (show) {
+        document.body.classList.remove('hide-mouse')
+      } else {
+        document.body.classList.add('hide-mouse')
+      }
+      // Also keep custom mode's show-mouse class for backward compatibility
+      document.querySelectorAll('.mode-custom-content').forEach(el => {
+        if (show) el.classList.add('show-mouse')
+        else el.classList.remove('show-mouse')
+      })
+      // Resize window for custom mode
+      if (currentMode === 'custom') {
+        if (show) ipcRenderer.send('overlay-resize', { width: 1080, height: 320 })
+        else ipcRenderer.send('overlay-resize', { width: 880, height: 280 })
+      }
+    }
+
+    function setMouseSettings(settings) {
+      if (settings.x !== undefined) document.documentElement.style.setProperty('--mouse-x', settings.x + 'px')
+      if (settings.y !== undefined) document.documentElement.style.setProperty('--mouse-y', settings.y + 'px')
+      if (settings.width !== undefined) document.documentElement.style.setProperty('--mouse-width', settings.width + 'px')
+      if (settings.height !== undefined) document.documentElement.style.setProperty('--mouse-height', settings.height + 'px')
+    }
+
+    function setLocked(locked) {
+      if (locked) document.body.classList.add('locked')
+      else document.body.classList.remove('locked')
+    }
+
+    let customKeys = ['W', 'A', 'S', 'D', 'Space']
+    function setCustomKeys(keys) {
+      customKeys = keys || []
+      renderCustomKeyboard()
+    }
+
+    function renderCustomKeyboard() {
+      const container = document.querySelector('.mode-custom-content .custom-keyboard')
+      if (!container) return
+      // Full keyboard layout - SAME key names as App.tsx keyboardRows
+      const rows = [
+        ['Esc', 'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9', 'F10', 'F11', 'F12'],
+        ['`', '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', 'Backspace'],
+        ['Tab', 'Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P', '[', ']', '\\'],
+        ['Caps', 'A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L', ';', "'", 'Enter'],
+        ['Shift', 'Z', 'X', 'C', 'V', 'B', 'N', 'M', ',', '.', '/', 'Shift R', '↑'],
+        ['Ctrl', 'Win', 'Alt', 'Space', 'Alt R', 'Menu', 'Ctrl R', '←', '↓', '→'],
+      ]
+      const keyImages = {
+        'Esc': 'escape_white.png', 'F1': 'f1_white.png', 'F2': 'f2_white.png', 'F3': 'f3_white.png',
+        'F4': 'f4_white.png', 'F5': 'f5_white.png', 'F6': 'f6_white.png', 'F7': 'f7_white.png',
+        'F8': 'f8_white.png', 'F9': 'f9_white.png', 'F10': 'f10_white.png', 'F11': 'f11_white.png', 'F12': 'f12_white.png',
+        '`': 'backtick_white.png', '1': '1_white.png', '2': '2_white.png', '3': '3_white.png',
+        '4': '4_white.png', '5': '5_white.png', '6': '6_white.png', '7': '7_white.png',
+        '8': '8_white.png', '9': '9_white.png', '0': '0_white.png', '-': 'minus_white.png',
+        '=': 'equals_white.png', 'Backspace': 'backspace_white.png', 'Tab': 'tab_white.png',
+        'Q': 'q_white.png', 'W': 'w_white.png', 'E': 'e_white.png', 'R': 'r_white.png',
+        'T': 't_white.png', 'Y': 'y_white.png', 'U': 'u_white.png', 'I': 'i_white.png',
+        'O': 'o_white.png', 'P': 'p_white.png', '[': 'bracket-open_white.png',
+        ']': 'bracket-close_white.png', '\\': 'backslash_white.png', 'Caps': 'caps_white.png',
+        'A': 'a_white.png', 'S': 's_white.png', 'D': 'd_white.png', 'F': 'f_white.png',
+        'G': 'g_white.png', 'H': 'h_white.png', 'J': 'j_white.png', 'K': 'k_white.png',
+        'L': 'l_white.png', ';': 'semicolon_white.png', "'": 'apostrophe_white.png',
+        'Enter': 'enter_white.png', 'Shift': 'shift_white.png', 'Shift R': 'shift_white.png',
+        'Z': 'z_white.png', 'X': 'x_white.png', 'C': 'c_white.png', 'V': 'v_white.png',
+        'B': 'b_white.png', 'N': 'n_white.png', 'M': 'm_white.png', ',': 'comma_white.png',
+        '.': 'full-stop_white.png', '/': 'slash_white.png', '↑': 'arrow-up_white.png',
+        'Ctrl': 'ctrl_white.png', 'Ctrl R': 'ctrl_white.png', 'Win': 'windows_white.png',
+        'Alt': 'alt_white.png', 'Alt R': 'alt_white.png', 'Space': 'space_lg_white.png',
+        'Menu': 'menu_white.png', '←': 'arrow-left_white.png',
+        '↓': 'arrow-down_white.png', '→': 'arrow-right_white.png',
+      }
+      const keyWidths = {
+        'Esc': 'u-12', 'Backspace': 'u-2', 'Tab': 'u-15', 'Caps': 'u-175',
+        'Enter': 'u-225', 'Shift': 'u-225', 'Shift R': 'u-275',
+        'Ctrl': 'u-125', 'Ctrl R': 'u-125', 'Win': 'u-125',
+        'Alt': 'u-125', 'Alt R': 'u-125', 'Space': 'u-625', 'Menu': 'u-125',
+      }
+      // Exact match - no normalization
+      const selectedSet = new Set(customKeys)
+      let html = ''
+      rows.forEach(row => {
+        html += '<div class="kb-row">'
+        row.forEach(key => {
+          const width = keyWidths[key] || 'u-1'
+          const img = keyImages[key] || ''
+          const isSelected = selectedSet.has(key)
+          if (isSelected) {
+            html += `<div class="kb-key ${width}" data-key="${key}">`
+            if (img) html += `<img src="${getAssetPath('keyboard-assets/keys/' + img)}" alt="${key}"/>`
+            html += '</div>'
+          } else {
+            html += `<div class="kb-key ${width}" style="visibility: hidden;"></div>`
+          }
+        })
+        html += '</div>'
+      })
+      container.innerHTML = html
+      updateHighlight()
+    }
+
+    ipcRenderer.on('input-event', (event, data) => {
+      if (data.type === 'keyboard') {
+        const key = normalizeKey(data.key)
+        if (data.state === 'down') pressedKeys.add(key)
+        else pressedKeys.delete(key)
+      } else if (data.type === 'mouse') {
+        if (data.state === 'down') pressedMouse.add(data.button)
+        else pressedMouse.delete(data.button)
+      }
+      render()
+    })
+
+    ipcRenderer.on('set-mode', (event, mode) => setMode(mode))
+    ipcRenderer.on('set-show-mouse', (event, show) => setShowMouse(show))
+    ipcRenderer.on('set-mouse-settings', (event, settings) => setMouseSettings(settings))
+    ipcRenderer.on('set-locked', (event, locked) => {
+      setLocked(locked)
+      isLocked = locked
+      lockBtn.textContent = locked ? '🔒' : '🔓'
+      lockBtn.classList.toggle('locked', locked)
+    })
+    ipcRenderer.on('set-custom-keys', (event, keys) => setCustomKeys(keys))
+    ipcRenderer.on('set-keyboard-settings', (event, settings) => setKeyboardSettings(settings))
+    ipcRenderer.on('set-theme', (event, theme) => setTheme(theme))
+
+    let currentTheme = 'white'
+
+    function setTheme(theme) {
+      if (!theme || theme === currentTheme) return
+      currentTheme = theme
+      const isBlack = theme === 'black'
+      // Update all keyboard and mouse images
+      document.querySelectorAll('img').forEach(img => {
+        let src = img.src
+        if (src.includes('keyboard-assets')) {
+          if (isBlack) {
+            src = src.replace('keyboard-assets/', 'keyboard-assets-black/')
+            src = src.replace(/_white\.png/g, '_black.png')
+            src = src.replace(/White\.png/g, 'Black.png')
+          } else {
+            src = src.replace('keyboard-assets-black/', 'keyboard-assets/')
+            src = src.replace(/_black\.png/g, '_white.png')
+            src = src.replace(/Black\.png/g, 'White.png')
+          }
+          img.src = src
+        }
+      })
+    }
+
+    function getAssetPath(basePath) {
+      if (currentTheme === 'black') {
+        return basePath.replace('keyboard-assets/', 'keyboard-assets-black/')
+          .replace(/_white\.png/g, '_black.png')
+          .replace(/White\.png/g, 'Black.png')
+      }
+      return basePath
+    }
+
+    function setKeyboardSettings(settings) {
+      if (!settings) return
+      // Apply scale
+      if (settings.scale !== undefined) {
+        document.documentElement.style.setProperty('--kb-scale', settings.scale / 100)
+      }
+      // Apply opacity
+      if (settings.opacity !== undefined) {
+        document.documentElement.style.setProperty('--kb-opacity', settings.opacity / 100)
+      }
+      // Apply highlight color
+      if (settings.highlightColor !== undefined) {
+        document.documentElement.style.setProperty('--kb-highlight', settings.highlightColor)
+      }
+      // Apply highlight opacity (separate from keyboard opacity)
+      if (settings.highlightOpacity !== undefined) {
+        document.documentElement.style.setProperty('--kb-highlight-opacity', settings.highlightOpacity / 100)
+      }
+    }
+    document.getElementById('closeBtn').addEventListener('click', () => ipcRenderer.send('close-overlay'))
+
+    let isLocked = false
+    const lockBtn = document.getElementById('lockBtn')
+    lockBtn.addEventListener('click', () => {
+      isLocked = !isLocked
+      setLocked(isLocked)
+      lockBtn.textContent = isLocked ? '🔒' : '🔓'
+      lockBtn.classList.toggle('locked', isLocked)
+      ipcRenderer.send('overlay-lock-state', isLocked)
+    })
+    document.getElementById('eyeBtn').addEventListener('click', () => {
+      ipcRenderer.send('close-overlay')
+    })
+    render()
+    setTimeout(updateControlPosition, 100)
+  </script>
+</body>
+</html>

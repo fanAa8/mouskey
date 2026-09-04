@@ -1,0 +1,142 @@
+{
+  "id": "lol",
+  "name": "英雄联盟",
+  "genre": "MOBA",
+  "color": "#14A5A0",
+  "adapterLabel": "Riot 原生 PersistedSettings.json 格式",
+  "configPathLabel": "Game\\Config\\PersistedSettings.json",
+  "configFormat": "riot-persisted-json",
+  "configFileName": "PersistedSettings.json",
+  "configRelativePath": "Game\\Config\\PersistedSettings.json",
+  "detectionType": "lol-special",
+  "installPaths": [
+    "D:\\WeGameApps\\英雄联盟",
+    "C:\\Riot Games\\League of Legends",
+    "C:\\Program Files\\League of Legends",
+    "D:\\Riot Games\\League of Legends"
+  ],
+  "modes": [
+    { "id": "traditional", "name": "传统模式", "section": "GameEvents" },
+    { "id": "wasd", "name": "WASD模式", "section": "WASD" }
+  ],
+  "defaultMode": "traditional",
+  "supportedActions": [
+    "primary", "secondary", "attack_move",
+    "ability1", "ability2", "ability3", "ultimate",
+    "summoner1", "summoner2",
+    "inventory1", "inventory2", "inventory3", "inventory4", "inventory5", "inventory6",
+    "trinket", "role_quest",
+    "ping", "shop", "camera_snap", "camera_lock", "map",
+    "stop", "hold_position"
+  ],
+  "nativeNames": {
+    "primary": "evtPlayerAttackMoveClick",
+    "secondary": "evtPlayerMoveClick",
+    "attack_move": "evtPlayerAttackMoveClick",
+    "ability1": "evtCastSpell1",
+    "ability2": "evtCastSpell2",
+    "ability3": "evtCastSpell3",
+    "ultimate": "evtCastSpell4",
+    "summoner1": "evtCastAvatarSpell1",
+    "summoner2": "evtCastAvatarSpell2",
+    "inventory1": "evtUseItem1",
+    "inventory2": "evtUseItem2",
+    "inventory3": "evtUseItem3",
+    "inventory4": "evtUseItem4",
+    "inventory5": "evtUseItem5",
+    "inventory6": "evtUseItem6",
+    "trinket": "evtUseVisionItem",
+    "role_quest": "evtCastRoleBound",
+    "ping": "evtPlayerPingCursor",
+    "shop": "evtOpenShop",
+    "camera_snap": "evtCameraSnap",
+    "camera_lock": "evtCameraLockToggle",
+    "map": "evtShowScoreBoard",
+    "stop": "evtPlayerStopPosition",
+    "hold_position": "evtPlayerHoldPosition"
+  },
+  "modeSupportedActions": {
+    "wasd": [
+      "forward", "left", "back", "right",
+      "ability1", "ability2", "ability3", "ultimate",
+      "summoner1", "summoner2", "inventory1", "inventory2",
+      "trinket", "role_quest", "ping", "camera_snap", "cancel_cast"
+    ]
+  },
+  "modeNativeNames": {
+    "wasd": {
+      "forward": "MoveUp",
+      "left": "MoveLeft",
+      "back": "MoveDown",
+      "right": "MoveRight",
+      "ability1": "CastSpell1",
+      "ability2": "CastSpell2",
+      "ability3": "CastSpell3",
+      "ultimate": "CastSpell4",
+      "summoner1": "CastAvatarSpell1",
+      "summoner2": "CastAvatarSpell2",
+      "ping": "PlayerPingCursor",
+      "inventory1": "UseItem1",
+      "inventory2": "UseItem2",
+      "trinket": "UseVisionItem",
+      "role_quest": "CastRoleBound",
+      "camera_snap": "CameraSnap",
+      "cancel_cast": "CancelCurrentActions"
+    }
+  },
+  "defaults": {
+    "primary": "Mouse 1",
+    "secondary": "Mouse 2",
+    "attack_move": "A",
+    "ability1": "Q",
+    "ability2": "W",
+    "ability3": "E",
+    "ultimate": "R",
+    "summoner1": "D",
+    "summoner2": "F",
+    "inventory1": "1",
+    "inventory2": "2",
+    "inventory3": "3",
+    "inventory4": "5",
+    "inventory5": "6",
+    "inventory6": "7",
+    "trinket": "4",
+    "role_quest": "V",
+    "ping": "G",
+    "recall": "B",
+    "shop": "P",
+    "camera_snap": "Space",
+    "camera_lock": "Y",
+    "map": "Tab",
+    "stop": "S",
+    "hold_position": "H"
+  },
+  "modeDefaults": {
+    "wasd": {
+      "forward": "W",
+      "left": "A",
+      "back": "S",
+      "right": "D",
+      "ability1": "Mouse 2",
+      "ability2": "Shift",
+      "ability3": "E",
+      "ultimate": "R",
+      "summoner1": "Q",
+      "summoner2": "F",
+      "ping": "G",
+      "inventory1": "1",
+      "inventory2": "2",
+      "cancel_cast": "C"
+    }
+  },
+  "canWrite": true,
+  "applyMethod": "restart",
+  "cloudSync": true,
+  "lcuApi": {
+    "supported": true,
+    "inputSettingsEndpoint": "/lol-game-settings/v1/input-settings",
+    "gameSettingsEndpoint": "/lol-game-settings/v1/game-settings",
+    "quitGameEndpoint": "/lol-gameflow/v1/quit-game",
+    "gameflowPhaseEndpoint": "/lol-gameflow/v1/gameflow-phase"
+  }
+}

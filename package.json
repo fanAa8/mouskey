@@ -1,0 +1,75 @@
+{
+  "name": "keyforge-native-settings",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "lint": "eslint src vite.config.ts",
+    "preview": "vite preview",
+    "electron:dev": "electron .",
+    "electron:build": "npm run build && electron-builder",
+    "electron:build:win": "npm run build && electron-builder --win"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "latest",
+    "koffi": "^3.2.0",
+    "lucide-react": "latest",
+    "node-global-key-listener": "^0.3.0",
+    "react": "latest",
+    "react-dom": "latest",
+    "uiohook-napi": "^1.5.5",
+    "vite": "latest"
+  },
+  "devDependencies": {
+    "@eslint/js": "latest",
+    "@types/node": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "electron": "^44.1.1",
+    "electron-builder": "^26.15.3",
+    "eslint": "latest",
+    "eslint-plugin-react-hooks": "latest",
+    "eslint-plugin-react-refresh": "latest",
+    "express": "^5.2.1",
+    "globals": "latest",
+    "js-yaml": "^5.4.1",
+    "typescript": "latest",
+    "typescript-eslint": "latest"
+  },
+  "build": {
+    "appId": "com.keyforge.app",
+    "productName": "Keyforge",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "src/**/*",
+      "vite.config.ts",
+      "tsconfig.json",
+      "package.json",
+      "node_modules/**/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "public/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  }
+}

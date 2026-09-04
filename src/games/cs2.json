@@ -1,0 +1,63 @@
+{
+  "id": "cs2",
+  "name": "CS2",
+  "genre": "FPS",
+  "color": "#E26A45",
+  "adapterLabel": "Source 引擎 bind 命令",
+  "configPathLabel": "Steam / userdata / <id> / 730 / local / cfg",
+  "configFormat": "source-cfg",
+  "configFileName": "keyforge.cfg",
+  "configRelativePath": "local\\cfg",
+  "detectionType": "steam",
+  "steamAppId": "730",
+  "installPaths": [
+    "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Counter-Strike Global Offensive",
+    "D:\\Steam\\steamapps\\common\\Counter-Strike Global Offensive",
+    "E:\\Steam\\steamapps\\common\\Counter-Strike Global Offensive"
+  ],
+  "modes": [
+    { "id": "default", "name": "默认", "section": "" }
+  ],
+  "defaultMode": "default",
+  "supportedActions": [
+    "forward", "left", "back", "right",
+    "primary", "secondary",
+    "ability1", "ability2", "ability3", "ultimate",
+    "interact", "jump", "inventory1", "map"
+  ],
+  "nativeNames": {
+    "forward": "+forward",
+    "left": "+moveleft",
+    "back": "+back",
+    "right": "+moveright",
+    "primary": "+attack",
+    "secondary": "+attack2",
+    "ability1": "slot1",
+    "ability2": "slot2",
+    "ability3": "drop",
+    "ultimate": "+voicerecord",
+    "interact": "+use",
+    "jump": "+jump",
+    "inventory1": "slot3",
+    "map": "showscores"
+  },
+  "defaults": {
+    "forward": "W",
+    "left": "A",
+    "back": "S",
+    "right": "D",
+    "primary": "Mouse 1",
+    "secondary": "Mouse 2",
+    "ability1": "1",
+    "ability2": "2",
+    "ability3": "G",
+    "ultimate": "K",
+    "interact": "E",
+    "jump": "Space",
+    "inventory1": "3",
+    "map": "Tab"
+  },
+  "canWrite": true,
+  "applyMethod": "exec",
+  "cloudSync": false
+}

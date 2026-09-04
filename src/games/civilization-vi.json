@@ -1,0 +1,61 @@
+{
+  "id": "civilization-vi",
+  "name": "文明 VI",
+  "genre": "策略",
+  "color": "#8F7A52",
+  "adapterLabel": "Firaxis InputSettings.json",
+  "configPathLabel": "%LOCALAPPDATA%/Firaxis Games/Sid Meier's Civilization VI/InputSettings.json",
+  "configFormat": "civ6-json",
+  "configFileName": "InputSettings.json",
+  "configRelativePath": "InputSettings.json",
+  "detectionType": "localappdata",
+  "localAppDataSubPath": "Firaxis Games\\Sid Meier's Civilization VI",
+  "steamAppId": "289070",
+  "installPaths": [
+    "%LOCALAPPDATA%\\Firaxis Games\\Sid Meier's Civilization VI",
+    "%USERPROFILE%\\AppData\\Local\\Firaxis Games\\Sid Meier's Civilization VI"
+  ],
+  "modes": [
+    { "id": "default", "name": "默认", "section": "root" }
+  ],
+  "defaultMode": "default",
+  "supportedActions": [
+    "forward", "left", "back", "right",
+    "primary", "secondary",
+    "ability1", "ability2", "ability3",
+    "interact", "map", "inventory1"
+  ],
+  "nativeNames": {
+    "forward": "CameraPanUp",
+    "left": "CameraPanLeft",
+    "back": "CameraPanDown",
+    "right": "CameraPanRight",
+    "primary": "Attack",
+    "secondary": "RangedAttack",
+    "ability1": "AutoExplore",
+    "ability2": "Fortify",
+    "ability3": "FoundCity",
+    "interact": "MoveTo",
+    "map": "ToggleMapTackVisibility",
+    "inventory1": "ToggleGreatWorks"
+  },
+  "defaults": {
+    "forward": "UP",
+    "left": "LEFT",
+    "back": "DOWN",
+    "right": "RIGHT",
+    "primary": "A",
+    "secondary": "R",
+    "ability1": "E",
+    "ability2": "F",
+    "ability3": "B",
+    "interact": "M",
+    "map": "W",
+    "inventory1": "W"
+  },
+  "canWrite": true,
+  "applyMethod": "restart",
+  "cloudSync": false,
+  "keyPrefix": "LOC_OPTIONS_KEY_",
+  "notes": "Civilization VI 输入配置为 JSON 格式。键位格式为 LOC_OPTIONS_KEY_ + 键名(大写)。视角移动默认为方向键，ESDF布局需将冲突键位移走。"
+}

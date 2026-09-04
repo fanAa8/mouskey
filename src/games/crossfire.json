@@ -1,0 +1,62 @@
+{
+  "id": "cf",
+  "name": "穿越火线",
+  "genre": "FPS",
+  "color": "#E7A423",
+  "adapterLabel": "CF KeySettings.ini",
+  "configPathLabel": "CF / UserData / KeySettings.ini",
+  "configFormat": "ini",
+  "configFileName": "KeySettings.ini",
+  "configRelativePath": "UserData\\KeySettings.ini",
+  "detectionType": "path-scan",
+  "installPaths": [
+    "C:\\Program Files (x86)\\Tencent\\CrossFire",
+    "D:\\CrossFire",
+    "E:\\CrossFire"
+  ],
+  "modes": [
+    { "id": "default", "name": "默认", "section": "KeySettings" }
+  ],
+  "defaultMode": "default",
+  "supportedActions": [
+    "forward", "left", "back", "right",
+    "primary", "secondary",
+    "ability1", "ability2", "ability3", "ultimate",
+    "interact", "jump", "inventory1", "map"
+  ],
+  "nativeNames": {
+    "forward": "MoveForward",
+    "left": "MoveLeft",
+    "back": "MoveBack",
+    "right": "MoveRight",
+    "primary": "Fire",
+    "secondary": "Aim",
+    "ability1": "Weapon1",
+    "ability2": "Weapon2",
+    "ability3": "Reload",
+    "ultimate": "Voice",
+    "interact": "Use",
+    "jump": "Jump",
+    "inventory1": "Melee",
+    "map": "Score"
+  },
+  "defaults": {
+    "forward": "W",
+    "left": "A",
+    "back": "S",
+    "right": "D",
+    "primary": "Mouse 1",
+    "secondary": "Mouse 2",
+    "ability1": "1",
+    "ability2": "2",
+    "ability3": "R",
+    "ultimate": "V",
+    "interact": "E",
+    "jump": "Space",
+    "inventory1": "3",
+    "map": "Tab"
+  },
+  "canWrite": true,
+  "applyMethod": "restart",
+  "cloudSync": false
+}

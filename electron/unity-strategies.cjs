@@ -46,7 +46,8 @@ const detectUnityGame = (installPath, maxDepth = 2) => {
   const inputStack = []
   if (has('Unity.InputSystem.dll')) inputStack.push('new-input-system')
   if (has('Rewired_Core.dll') || has('Rewired_Windows.dll')) inputStack.push('rewired')
-  if (has('UnityEngine.InputLegacyModule.dll') || backend === 'il2cpp') inputStack.push('legacy-input-manager')
+  // Old Unity (<2017.2) ships a monolithic UnityEngine.dll without modules: legacy Input is built in
+  if (has('UnityEngine.InputLegacyModule.dll') || backend === 'il2cpp' || (has('UnityEngine.dll') && !has('UnityEngine.CoreModule.dll'))) inputStack.push('legacy-input-manager')
   const antiCheat = ue4s.detectAntiCheat(installPath)
   return {
     ...g, company, product, backend, inputStack, antiCheat,

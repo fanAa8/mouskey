@@ -3709,6 +3709,8 @@ module.exports = {
   ue4Generic: ue4g,
   ue4Strategies: ue4s,
   /** POST /api/adapters/ue4-strategy { action, gameId?, installPath?, project?, status?, plan? } */
+  lolDeps: () => ({ findLcuApi, lcuRequest, isGameRunning, buildLolCandidates }),
+  getSteamPathForV2: () => getSteamPath(),
   lolLcuGet: async (path) => { const l = findLcuApi(); if (!l) return null; const auth = Buffer.from(`riot:${l.token}`).toString('base64'); return lcuRequest(l.port, auth, 'GET', path) },
   lolAbilitiesWert: (req = {}) => lolAb.applyLolAbilitiesWert({ findLcuApi, lcuRequest, isGameRunning, buildLolCandidates }, { dryRun: !!req.dryRun, movementMode: req.movementMode || null }),
   unityStrategy: (req = {}) => {

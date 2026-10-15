@@ -16,6 +16,8 @@ const apiHandlers = nodeRequire('./electron/api-handlers.cjs') as {
   batchMigrateEsdf: (req: Record<string, unknown>) => { success: boolean; message: string; [k: string]: unknown }
 }
 
+const mouskeyV2 = nodeRequire('./electron/mouskey-v2.cjs') as { dispatch: (action: string, body: Record<string, unknown>) => Promise<Record<string, unknown>> }
+
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 type IniEntry = { section: string; key: string; value: string }
@@ -2112,6 +2114,20 @@ const keyforgeAdapterPlugin = (): Plugin => ({
           response.setHeader('Content-Type', 'application/json; charset=utf-8')
           response.end(JSON.stringify({ success: false, message: `ESDF 迁移失败：${err instanceof Error ? err.message : String(err)}` }))
         }
+      })
+    })
+
+    // ── MousKey v2 (shared dispatcher with electron/main.cjs) ──
+    server.middlewares.use('/api/v2/', (request, response, next) => {
+      if (request.method !== 'POST') { next(); return }
+      const action = (request.url || '').split('?')[0].replace(/^\//, '')
+      let body = ''
+      request.on('data', (chunk) => { body += chunk })
+      request.on('end', () => {
+        const send = (code: number, data: unknown) => { response.statusCode = code; response.setHeader('Content-Type', 'application/json; charset=utf-8'); response.setHeader('Cache-Control', 'no-store'); response.end(JSON.stringify(data)) }
+        let parsed: Record<string, unknown> = {}
+        try { parsed = body ? JSON.parse(body) : {} } catch { /* empty */ }
+        mouskeyV2.dispatch(action, parsed).then((r) => send(r.success === false && !r.needsConfirm ? 400 : 200, r)).catch((err) => send(500, { success: false, message: String(err) }))
       })
     })
 

@@ -6,6 +6,7 @@ const { spawn } = require('child_process')
 const http = require('http')
 // Shared API handlers (game detection, config write, presets, LoL) — converted from vite.config.ts
 const api = require('./api-handlers.cjs')
+const v2 = require('./mouskey-v2.cjs')
 
 const PORT = 4174
 const SSE_PORT = 4175
@@ -703,6 +704,14 @@ function startSseServer() {
     if (urlPath === '/api/adapters/ue4-strategy' && req.method === 'POST') {
       const body = await readBody()
       try { const r = api.ue4Strategy(body); jsonOk(r, r.success ? 200 : 400) }
+      catch (err) { jsonOk({ success: false, message: String(err) }, 500) }
+      return
+    }
+
+    // POST /api/v2/<action> — MousKey v2 (games overview, launch, personal profiles, plan/apply)
+    if (urlPath.startsWith('/api/v2/') && req.method === 'POST') {
+      const body = await readBody()
+      try { const r = await v2.dispatch(urlPath.slice('/api/v2/'.length), body, { opener: (u) => require('electron').shell.openExternal(u) }); jsonOk(r, r.success === false && !r.needsConfirm ? 400 : 200) }
       catch (err) { jsonOk({ success: false, message: String(err) }, 500) }
       return
     }

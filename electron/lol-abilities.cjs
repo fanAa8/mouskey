@@ -185,3 +185,48 @@ const applyClickMove = async (deps, lcu, auth, bdir) => {
 }
 
 module.exports = { CLICK_MOVE, setGameCfgVerified, setPersistedGameCfgVerified, applyClickMove, WERT_PLAN, planWert, writePersistedVerified, writeInputIniVerified, applyLolAbilitiesWert }
+
+/**
+ * Generic LoL GameEvents write (personal profiles). Same safety as the WERT path:
+ * client running, no match, LCU backup, PATCH, GET verify, verified file mirror; optional click-to-move.
+ */
+const applyLolUpdates = async (deps, updates, { dryRun = false, movementMode = null } = {}) => {
+  if (deps.isGameRunning()) return { success: false, status: 'game-running', message: '对局进行中，已阻止写入。' }
+  const lcu = deps.findLcuApi()
+  if (!lcu) return { success: false, status: 'client-not-running', message: '请先打开英雄联盟客户端（不要进入对局）。' }
+  const auth = Buffer.from(`riot:${lcu.token}`).toString('base64')
+  let phase
+  try { phase = String((await deps.lcuRequest(lcu.port, auth, 'GET', '/lol-gameflow/v1/gameflow-phase')).data || '').replace(/"/g, '') }
+  catch (e) { return { success: false, status: 'client-not-ready', message: '客户端 API 尚未就绪，请稍后重试。' } }
+  if (/InProgress|Reconnect|GameStart|ChampSelect/i.test(phase)) return { success: false, status: 'in-game', phase, message: `当前阶段 ${phase}，已阻止写入。` }
+  const before = JSON.parse((await deps.lcuRequest(lcu.port, auth, 'GET', '/lol-game-settings/v1/input-settings')).data)
+  const ge = before.GameEvents || {}
+  // keep secondary binds (",..." part) of each event; only the primary bind is replaced
+  updates = Object.fromEntries(Object.entries(updates).map(([k, v]) => { const cur = ge[k]; const i = typeof cur === 'string' ? cur.indexOf(',') : -1; return [k, i >= 0 && !v.includes(',') ? v + cur.slice(i) : v] }))
+  const changes = Object.entries(updates).filter(([k, v]) => ge[k] !== v).map(([k, v]) => ({ event: k, from: ge[k] ?? null, to: v }))
+  // collisions with untouched events: a new key already used elsewhere
+  const newKeys = new Set(Object.values(updates).flatMap((v) => v.split(',').map(norm).filter((x) => x && x !== '[<unbound>]')))
+  const collisions = Object.entries(ge).filter(([k, v]) => !(k in updates) && v).flatMap(([k, v]) => v.split(',').map(norm).filter((x) => newKeys.has(x)).map((x) => ({ event: k, key: x })))
+  const seenK = {}
+  for (const [k, v] of Object.entries(updates)) for (const x of v.split(',').map(norm).filter((y) => y && y !== '[<unbound>]')) { if (seenK[x] && seenK[x] !== k) collisions.push({ event: k, key: x, with: seenK[x] }); seenK[x] = k }
+  if (dryRun) return { success: true, dryRun: true, phase, changes, collisions, movementMode }
+  if (collisions.length) return { success: false, status: 'collision', collisions, message: '新键位与未修改的动作冲突，请先在方案里处理。' }
+  const bdir = backupDir(); const s = stamp()
+  const lcuBackup = join(bdir, `lcu-input-settings.${s}.json`); writeFileSync(lcuBackup, JSON.stringify(before, null, 2))
+  let files = []; let lcuOk = true
+  if (changes.length) {
+    const upd = Object.fromEntries(changes.map((c) => [c.event, c.to]))
+    const p = await deps.lcuRequest(lcu.port, auth, 'PATCH', '/lol-game-settings/v1/input-settings', JSON.stringify({ GameEvents: upd }))
+    if (p.status !== 200 && p.status !== 204) return { success: false, status: 'lcu-patch-failed', lcuBackup }
+    const after = JSON.parse((await deps.lcuRequest(lcu.port, auth, 'GET', '/lol-game-settings/v1/input-settings')).data)
+    lcuOk = Object.entries(upd).every(([k, v]) => (after.GameEvents || {})[k] === v)
+    const loc = deps.buildLolCandidates().find((c) => existsSync(c.persistedSettingsPath))
+    if (loc) {
+      try { files.push({ path: loc.persistedSettingsPath, ...writePersistedVerified(loc.persistedSettingsPath, 'GameEvents', upd, bdir) }) } catch (e) { files.push({ path: loc.persistedSettingsPath, error: String(e) }) }
+      if (existsSync(loc.inputPath)) { try { files.push({ path: loc.inputPath, ...writeInputIniVerified(loc.inputPath, 'GameEvents', upd, bdir) }) } catch (e) { files.push({ path: loc.inputPath, error: String(e) }) } }
+    }
+  }
+  const movement = movementMode === 'click' ? await applyClickMove(deps, lcu, auth, bdir) : null
+  return { success: lcuOk && (!movement || movement.verified), status: 'written', lcuBackup, changes, lcuVerified: lcuOk, files, movement }
+}
+module.exports.applyLolUpdates = applyLolUpdates

@@ -33,7 +33,11 @@ const selectStrategy = (game, ctx = {}) => {
     else if (st.plan2a) cands = ['ue4-pak', 'ue4ss', 'ue4-clearArray']
     else cands = ['ue4-clearArray', 'ue4-pak', 'ue4ss']
   } else if (game.engineType === 'unity') {
-    if (game.configPath && /\.(json|ini|cfg)$/i.test(game.configFileName || '')) cands = ['config', 'unity-ggm', 'bepinex']
+    const us = ctx.unityState || {}
+    const keybindFile = game.configPath && /\.(json|ini|cfg)$/i.test(game.configFileName || '') && /input|key|bind|control/i.test(game.configFileName || '')
+    if (us.planB) cands = ['bepinex', 'unity-ggm']
+    else if (us.planA) cands = ['unity-ggm', 'bepinex']
+    else if (keybindFile) cands = ['config', 'unity-ggm', 'bepinex']
     else cands = ['unity-ggm', 'bepinex']
   } else cands = ['config']
   const ineffective = new Set((ctx.history || []).filter((h) => h.status === 'ineffective').map((h) => String(h.plan).split(' ')[0]))
@@ -59,7 +63,11 @@ const describeGame = (g, cache) => {
   try { if (g.installPath) antiCheat = ue4s().detectAntiCheat(g.installPath, 3) } catch { /* ignore */ }
   const status = reqs.statusFor(g)
   const ue4State = g.engineType === 'ue4' && g.ue4Project ? (cache.ue4.games || {})[g.ue4Project] : null
-  const strat = selectStrategy(g, { antiCheat, ue4State, history: status.history })
+  let unityState = null
+  if (g.engineType === 'unity' && g.installPath) {
+    try { const u = unitys().detectUnityGame(g.installPath); const key = u && (u.product || null); unityState = key ? ((cache.unity && cache.unity.games) || {})[key] || null : null } catch { /* ignore */ }
+  }
+  const strat = selectStrategy(g, { antiCheat, ue4State, unityState, history: status.history })
   const requirements = reqs.requirementsFor(g, strat.chosen, antiCheat)
   return {
     gameId: g.gameId, name: g.name, engineType: g.engineType || null, steamAppId: g.steamAppId || null, installPath: g.installPath || null,
@@ -72,14 +80,14 @@ const describeGame = (g, cache) => {
 
 const listGames = () => {
   const all = api().detectAllGames()
-  const cache = { ue4: (() => { try { return ue4s().getStrategyState() } catch { return { games: {} } } })() }
+  const cache = { ue4: (() => { try { return ue4s().getStrategyState() } catch { return { games: {} } } })(), unity: (() => { try { return unitys().getUnityState() } catch { return { games: {} } } })() }
   const games = (all.games || []).filter((g) => g.found).map((g) => describeGame(g, cache))
   return { success: true, games }
 }
 const findGame = (gameId) => {
   const g = (api().detectAllGames().games || []).find((x) => x.gameId === gameId)
   if (!g) return null
-  const cache = { ue4: (() => { try { return ue4s().getStrategyState() } catch { return { games: {} } } })() }
+  const cache = { ue4: (() => { try { return ue4s().getStrategyState() } catch { return { games: {} } } })(), unity: (() => { try { return unitys().getUnityState() } catch { return { games: {} } } })() }
   return { raw: g, info: describeGame(g, cache) }
 }
 

@@ -57,6 +57,8 @@ const esdf = sem.BUILTIN_PROFILES.find((p) => p.id === 'builtin-esdf')
     assert.strictEqual(v2.selectStrategy({ gameId: 'ue4-1', engineType: 'ue4' }, { history: [{ plan: 'ue4-clearArray', status: 'ineffective' }] }).chosen, 'ue4-pak')
     assert.strictEqual(v2.selectStrategy({ gameId: 'unity-1', engineType: 'unity', configPath: 'x', configFileName: 'KMInput.json' }).chosen, 'config')
     assert.strictEqual(v2.selectStrategy({ gameId: 'unity-2', engineType: 'unity' }).chosen, 'unity-ggm')
+    assert.strictEqual(v2.selectStrategy({ gameId: 'unity-3', engineType: 'unity', configPath: 'x', configFileName: 'prefs.json' }).chosen, 'unity-ggm')
+    assert.strictEqual(v2.selectStrategy({ gameId: 'unity-4', engineType: 'unity', configPath: 'x', configFileName: 'KMInput.json' }, { unityState: { planA: {} } }).chosen, 'unity-ggm')
   })
   await t('verified seeds', () => {
     assert.strictEqual(reqs.statusFor({ gameId: 'lol' }).status, 'verified-in-game')

@@ -19,4 +19,5 @@ await t('mock LCU full flow + files',async()=>{
  assert(r.success&&r.lcuVerified&&r.wasdUntouched,JSON.stringify(r));assert(r.files.every(f=>f.verified),JSON.stringify(r.files))
  assert(fs.readFileSync(ini,'utf8').includes('MoveUp=[e]'));assert(fs.readFileSync(ini,'utf8').includes('evtCastSpell1=[w]'))
  for(const f of r.files)fs.rmSync(f.backup);fs.rmSync(r.lcuBackup)})
+await t('game.cfg click-move edit',()=>{const dir=fs.mkdtempSync(path.join(os.tmpdir(),'lolg'));const g=path.join(dir,'game.cfg');fs.writeFileSync(g,'[General]\r\nCameraModeWASD=1\r\nWASD=1\r\n[HUD]\r\nMovement Mode=1\r\n');const r=L.setGameCfgVerified(g,L.CLICK_MOVE,dir);assert(r.verified,JSON.stringify(r));const x=fs.readFileSync(g,'utf8');assert(x.includes('WASD=0')&&x.includes('Movement Mode=0')&&x.includes('\r\n'))})
 console.log(`${pass} passed, ${fail} failed`);process.exit(fail?1:0)})()

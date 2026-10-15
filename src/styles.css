@@ -1467,3 +1467,11 @@ select, option, optgroup { background-color: var(--menu-bg, #0f1626); color: var
 .theme-toggle { display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border-radius: 8px; border: 1px solid rgba(var(--fg-rgb), .1); background: rgba(var(--fg-rgb), .04); color: var(--tx-3); font-size: 12px; font-weight: 600; }
 .theme-toggle:hover { color: var(--tx-1); border-color: rgba(0, 212, 255, .4); }
 .v2-card, .v2-page { overflow: visible; }
+html { scrollbar-width: thin; scrollbar-color: rgba(0, 212, 255, .28) transparent; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(0, 212, 255, .25); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(0, 212, 255, .45); }
+::-webkit-scrollbar-corner { background: transparent; }
+:root[data-theme="light"] .v2-details { background: #f5f7fb; border-color: #e2e8f0; }
+:root[data-theme="light"] .v2-method { background: #fff; border-color: #e2e8f0; }

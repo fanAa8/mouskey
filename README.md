@@ -207,6 +207,12 @@ Ludusavi 主要解决“配置可能在哪里”，不保证指出“哪一个�
 | `POST /api/overlay/hide` | 隐藏悬浮窗 |
 | `POST /api/overlay/toggle` | 切换悬浮窗 |
 
+## 界面（3 个页签）
+
+1. **个人方案**：分为「WASD 键盘移动类」「鼠标点击移动类」两类，方案只属于一类；旧预设（WASD/ESDF 等）首次打开时自动迁移为个人方案（id 前缀 seed-/preset-）。鼠标类没有前后左右，固定为 鼠标右键：移动 / 鼠标左键：攻击/选择，另有技能、召唤师技能、物品、饰品（眼）、攻击移动、停止等。右侧 104 键键盘 + 鼠标可视化：选中动作后点键位绑定，冲突标红。
+2. **游戏迁移**：游戏列表（点开看详情/策略/历史/备份/启动/标记状态）+ 批量迁移（WASD 整体平移 ESDF 或个人方案，下拉按类别分组；鼠标类方案只对点击移动游戏如 LoL 完整生效，键盘游戏只应用技能类动作）。
+3. **实时显示**：实时按键可视化。
+
 ## 开发运行
 
 Windows PowerShell：
@@ -253,7 +259,7 @@ npm run build
 
 - `test-esdf-migrate.cjs`：75 项通过
 - `test-esdf-batch.cjs`：9 项通过
-- `test-ue4-strategies.cjs` 11 / `test-unity-strategies.cjs` 4 / `test-battlerite.cjs` 6 / `test-lol-abilities.cjs` 8 / `test-mouskey-v2.cjs` 13 项通过
+- `test-ue4-strategies.cjs` 11 / `test-unity-strategies.cjs` 4 / `test-battlerite.cjs` 6 / `test-lol-abilities.cjs` 8 / `test-mouskey-v2.cjs` 15 项通过
 - `npm run build`：通过
 
 ## 生产绿色版同步

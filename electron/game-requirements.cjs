@@ -1,5 +1,5 @@
 // Per-game apply requirements, launch info, effect status registry and write gating.
-const { existsSync, readFileSync, writeFileSync, mkdirSync } = require('node:fs')
+const { existsSync, readFileSync, writeFileSync, mkdirSync, copyFileSync, renameSync } = require('node:fs')
 const { join } = require('node:path')
 const os = require('node:os')
 
@@ -13,8 +13,16 @@ const VERIFIED_SEED = {
   'unity-504370': [{ plan: 'config KMInput.json + Steam Cloud', status: 'verified-in-game' }],
   lol: [{ plan: 'lcu GameEvents WERT + click-to-move', status: 'verified-in-game' }],
 }
-const loadStatus = () => { try { return JSON.parse(readFileSync(STATUS_FILE(), 'utf8')) } catch { return { games: {} } } }
-const saveStatus = (s) => { mkdirSync(keyforgeDir(), { recursive: true }); writeFileSync(STATUS_FILE(), JSON.stringify(s, null, 2)) }
+const loadStatus = () => {
+  if (!existsSync(STATUS_FILE())) return { games: {} }
+  try { const s = JSON.parse(readFileSync(STATUS_FILE(), 'utf8')); return s && s.games ? s : { games: {} } } catch {
+    // keep the corrupt file instead of silently losing history
+    try { copyFileSync(STATUS_FILE(), `${STATUS_FILE()}.corrupt-${Date.now()}`) } catch { /* ignore */ }
+    return { games: {} }
+  }
+}
+/** Atomic write (tmp + rename) so a crash mid-write can't truncate the status file. */
+const saveStatus = (s) => { mkdirSync(keyforgeDir(), { recursive: true }); const tmp = `${STATUS_FILE()}.${process.pid}.tmp`; writeFileSync(tmp, JSON.stringify(s, null, 2)); renameSync(tmp, STATUS_FILE()) }
 const statusFor = (game) => {
   const id = game.gameId
   const s = loadStatus().games[id] || []
@@ -75,7 +83,8 @@ const checkWrite = (req, { procs = [], lcuRunning = false, lcuPhase = null, game
   if (req.needsClientRunning && !lcuRunning) return { allowed: false, reason: '请先打开游戏客户端（不要进入对局）' }
   if (req.mustNotBeInMatch && (procs.includes('league of legends.exe') || /InProgress|Reconnect|ChampSelect|GameStart/i.test(lcuPhase || ''))) return { allowed: false, reason: '对局进行中，请结束对局后再写入' }
   if (req.mustBeClosed && gameProcess && procs.includes(gameProcess.toLowerCase())) return { allowed: false, reason: `游戏正在运行（${gameProcess}），请先关闭游戏` }
-  return { allowed: true, afterWrite: req.restartAfterWrite ? '修改后需重启游戏生效' : null }
+  const unknownProc = req.mustBeClosed && !gameProcess ? '未能识别该游戏的进程名，请自行确认游戏已关闭；' : ''
+  return { allowed: true, processUnknown: !!unknownProc, afterWrite: (unknownProc + (req.restartAfterWrite ? '修改后需重启游戏生效' : '')) || null }
 }
 
 module.exports = { VERIFIED_SEED, statusFor, setStatus, launchInfo, requirementsFor, checkWrite, loadStatus, STATUS_FILE }

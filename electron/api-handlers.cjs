@@ -1,6 +1,7 @@
 const {execFileSync} = require('node:child_process');
 const ue4g = require('./ue4-generic.cjs');
 const ue4s = require('./ue4-strategies.cjs');
+const unitys = require('./unity-strategies.cjs');
 const {existsSync, mkdirSync, readFileSync, readdirSync, copyFileSync, writeFileSync, unlinkSync, watch} = require('node:fs');
 const {basename, dirname, join, normalize, resolve} = require('node:path');
 const https = require('node:https');
@@ -890,7 +891,8 @@ const detectAllGames = ()=> {
  if (!engineType) {
  const unityDll = join(installPath, `${steamGame.name}_Data`, 'Managed', 'UnityEngine.dll')
  const unityAlt = join(installPath, 'Battlerite_Data', 'Managed', 'UnityEngine.dll')
- if (existsSync(unityDll) || existsSync(unityAlt)) {
+ const unityInfo = (() => { try { return unitys.detectUnityGame(installPath) } catch { return null } })()
+      if (existsSync(unityDll) || existsSync(unityAlt) || !!unityInfo) {
  engineType = 'unity'
  autoAdapter = true
  genre = 'Unity 可尝试'
@@ -3699,6 +3701,20 @@ module.exports = {
   ue4Generic: ue4g,
   ue4Strategies: ue4s,
   /** POST /api/adapters/ue4-strategy { action, gameId?, installPath?, project?, status?, plan? } */
+  unityStrategy: (req = {}) => {
+    const { action, installPath } = req
+    if (!installPath) return { success: false, message: 'installPath required' }
+    switch (action) {
+      case 'detect': { const g = unitys.detectUnityGame(installPath); return g ? { success: true, ...g } : { success: false, message: 'not a Unity game' } }
+      case 'im-apply': return unitys.applyInputManagerPatch({ installPath, map: req.map, dryRun: !!req.dryRun })
+      case 'im-revert': return unitys.revertInputManagerPatch({ installPath })
+      case 'bepinex-install': return unitys.installBepInEx({ installPath, remap: req.remap })
+      case 'bepinex-uninstall': return unitys.uninstallBepInEx({ installPath })
+      case 'set-status': return unitys.setUnityStatus(req)
+      case 'state': return { success: true, state: unitys.getUnityState() }
+      default: return { success: false, message: 'unknown action ' + action }
+    }
+  },
   ue4Strategy: (req = {}) => {
     let installPath = req.installPath, project = req.project
     if ((!installPath || !project) && req.gameId) {

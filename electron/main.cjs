@@ -707,6 +707,14 @@ function startSseServer() {
       return
     }
 
+    // POST /api/adapters/unity-strategy — plan A InputManager patch / plan B BepInEx remap
+    if (urlPath === '/api/adapters/unity-strategy' && req.method === 'POST') {
+      const body = await readBody()
+      try { const r = api.unityStrategy(body); jsonOk(r, r.success ? 200 : 400) }
+      catch (err) { jsonOk({ success: false, message: String(err) }, 500) }
+      return
+    }
+
     // GET /api/adapters/esdf-candidates — list migratable games after scan
     if (urlPath === '/api/adapters/esdf-candidates' && req.method === 'GET') {
       try { jsonOk(api.listEsdfCandidates()) }

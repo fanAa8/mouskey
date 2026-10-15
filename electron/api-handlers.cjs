@@ -2960,11 +2960,14 @@ const getUe4Defaults = (ue4) => {
  */
 const planUe4Override = (content, resolved) => {
   if (!resolved.ue4 && (resolved.configFileName || '').toLowerCase() !== 'input.ini') return null
-  if (content.includes(UE4_OVERRIDE_MARKER)) {
+  if (ue4g.hasUe4Override(content)) {
     return { skipped: true, result: { success: true, content, changedCount: 0, changes: [], format: 'ue4-override' } }
   }
   const defaults = getUe4Defaults(resolved.ue4)
-  const r = ue4g.buildUe4Override(content, defaults.text)
+  // Real defaults from the pak → replace-style (ClearArray + full list); template → -/+ lines
+  const r = defaults.source !== 'template'
+    ? ue4g.buildUe4ReplaceOverride(content, defaults.text)
+    : ue4g.buildUe4Override(content, defaults.text)
   // Targets: the resolved file plus the sibling Windows/WindowsNoEditor dir when unsure
   const targets = [resolved.filePath]
   const savedConfig = dirname(dirname(resolved.filePath))
@@ -2996,7 +2999,7 @@ const writeAndVerify = (filePath, text, enc, expectLines) => {
   writeFileSync(filePath, encodeConfigText(text, enc))
   const back = readConfigText(filePath, false).text
   if (expectLines && expectLines.length) {
-    const missingLines = expectLines.filter((l) => l.startsWith('+') && !back.includes(l))
+    const missingLines = expectLines.filter((l) => (l.startsWith('+') || l.startsWith('!')) && !back.includes(l))
     return { verified: missingLines.length === 0, missingLines }
   }
   return { verified: back === text, missingLines: [] }
@@ -3019,7 +3022,7 @@ const migrateEsdfConfig = (req) => {
   }
 
   let format = detectMigrationFormat(configFileName, content)
-  if (content.includes(UE4_OVERRIDE_MARKER)) {
+  if (ue4g.hasUe4Override(content)) {
     return { success: true, message: `${configFileName} 已含 MousKey 覆盖条目，跳过以免二次右移。`, gameId: req.gameId, configPath: filePath, format: 'ue4-override', changedCount: 0, changes: [], skipped: true }
   }
 
@@ -3115,7 +3118,8 @@ const migrateEsdfConfig = (req) => {
       for (const t of ue4Plan.targets.slice(1)) {
         const tEnc = readConfigText(t, false)
         if (tEnc.existed) createBackup(t, req.gameId || 'esdf')
-        const tPlan = ue4g.buildUe4Override(tEnc.text, getUe4Defaults(resolved.ue4).text)
+        const tDefs = getUe4Defaults(resolved.ue4)
+        const tPlan = tDefs.source !== 'template' ? ue4g.buildUe4ReplaceOverride(tEnc.text, tDefs.text) : ue4g.buildUe4Override(tEnc.text, tDefs.text)
         if (tPlan.changedCount === 0) continue
         const v = writeAndVerify(t, tPlan.content, tEnc, tPlan.added)
         extraWritten.push({ path: t, verified: v.verified })
@@ -3185,7 +3189,7 @@ const previewEsdfConfig = (req) => {
   }
 
   let format = detectMigrationFormat(configFileName, content)
-  if (content.includes(UE4_OVERRIDE_MARKER)) {
+  if (ue4g.hasUe4Override(content)) {
     return { success: true, gameId: req.gameId, name: req.gameName || req.gameId, status: 'already-esdf', format: 'ue4-override', configPath: filePath, configFileName, message: '已含 MousKey 覆盖条目', changedCount: 0, changes: [] }
   }
   const layout = detectMovementLayout(content, format)

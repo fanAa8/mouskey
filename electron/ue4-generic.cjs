@@ -190,7 +190,55 @@ const buildUe4Override = (existing, defaultsText) => {
   return { content: next, changedCount: changes.length, changes, added: lines }
 }
 
+/**
+ * Replace-style override (used when real defaults were read from the pak):
+ *   !ActionMappings=ClearArray / !AxisMappings=ClearArray, then the FULL
+ * default list re-added with shifted keys. Does not depend on '-' lines
+ * matching the default text byte-for-byte.
+ */
+const CLEAR_MARKERS = ['!ActionMappings=ClearArray', '!AxisMappings=ClearArray']
+const hasUe4Override = (text) => /; MousKey ESDF override/.test(text || '') || CLEAR_MARKERS.some((m) => (text || '').includes(m))
+
+const buildUe4ReplaceOverride = (existing, defaultsText) => {
+  const content = existing || ''
+  const mappings = parseMappings(defaultsText)
+  const changes = []
+  const out = { ActionMappings: [], AxisMappings: [] }
+  const seen = new Set()
+  for (const { kind, inner } of mappings) {
+    const km = inner.match(/Key=("?)([^,)"]+)\1/)
+    const nk = km ? shiftUe4Key(km[2]) : null
+    const newInner = nk ? inner.replace(/Key=("?)[^,)"]+\1/, `Key=${nk}`) : inner
+    const line = `+${kind}=(${newInner})`
+    if (seen.has(line)) continue
+    seen.add(line)
+    out[kind].push(line)
+    if (nk) {
+      const name = (inner.match(/(?:AxisName|ActionName)="?([^",]+)/) || [])[1] || '?'
+      changes.push(`${name}: ${km[2]} → ${nk}`)
+    }
+  }
+  if (!changes.length) return { content, changedCount: 0, changes, added: [] }
+  const added = [CLEAR_MARKERS[0], ...out.ActionMappings, CLEAR_MARKERS[1], ...out.AxisMappings]
+  // Drop any previous mapping lines from the user file, keep everything else
+  const kept = content.split(/\r?\n/).filter((l) => !/^\s*[-+!.]?(ActionMappings|AxisMappings)=/.test(l) && !/^; MousKey/.test(l))
+  const header = '[/Script/Engine.InputSettings]'
+  const block = ['; MousKey ESDF override', ...added].join('\r\n')
+  let text = kept.join('\r\n')
+  const idx = text.indexOf(header)
+  if (idx >= 0) {
+    const after = idx + header.length
+    text = text.slice(0, after) + '\r\n' + block + text.slice(after)
+  } else {
+    const t = text.replace(/\s+$/, '')
+    text = (t ? t + '\r\n\r\n' : '') + header + '\r\n' + block + '\r\n'
+  }
+  return { content: text, changedCount: changes.length, changes, added }
+}
+
 module.exports = {
+  buildUe4ReplaceOverride,
+  hasUe4Override,
   LETTER_SHIFT,
   shiftUe4Key,
   findUe4ProjectsInInstall,

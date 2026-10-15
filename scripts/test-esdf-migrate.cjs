@@ -283,5 +283,22 @@ console.log('\n[12] Pak platform hint')
   assert(d.length === 1 && d[0].endsWith('WindowsNoEditor'), 'unlaunched game uses pak platform only')
 }
 
+// ─── 13. Replace-style override + idempotency after game strips comments ───
+console.log('\n[13] Replace-style override')
+{
+  const u = api.ue4Generic
+  const defs = ['[/Script/Engine.InputSettings]',
+    '+AxisMappings=(AxisName="MoveForward",Scale=1.000000,Key=W)',
+    '+AxisMappings=(AxisName="MoveForward",Scale=1.000000,Key=Up)',
+    '+ActionMappings=(ActionName="Use",bShift=False,bCtrl=False,bAlt=False,bCmd=False,Key=LeftMouseButton)'].join('\n')
+  const r = u.buildUe4ReplaceOverride('\r\n', defs)
+  assert(r.content.includes('!AxisMappings=ClearArray') && r.content.includes('!ActionMappings=ClearArray'), 'clears arrays')
+  assert(r.content.includes('+AxisMappings=(AxisName="MoveForward",Scale=1.000000,Key=E)'), 'W→E re-added')
+  assert(r.content.includes('Key=Up)') && r.content.includes('Key=LeftMouseButton)'), 'unshifted defaults kept in full list')
+  assert(!r.content.includes('Key=W)'), 'no W left')
+  const stripped = r.content.split('\r\n').filter((l) => !l.startsWith(';')).join('\r\n')
+  assert(u.hasUe4Override(stripped), 'detected as already overridden after comment stripped')
+}
+
 console.log(`\n===== ${passed} passed, ${failed} failed =====`)
 process.exit(failed > 0 ? 1 : 0)

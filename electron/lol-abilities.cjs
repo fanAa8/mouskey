@@ -85,7 +85,9 @@ const applyLolAbilitiesWert = async (deps, { dryRun = false } = {}) => {
   const lcu = deps.findLcuApi()
   if (!lcu) return { success: false, status: 'client-not-running', message: 'League client (LeagueClientUx) is not running. Open the client (do not start a match), then retry.' }
   const auth = Buffer.from(`riot:${lcu.token}`).toString('base64')
-  const phaseRes = await deps.lcuRequest(lcu.port, auth, 'GET', '/lol-gameflow/v1/gameflow-phase')
+  let phaseRes
+  try { phaseRes = await deps.lcuRequest(lcu.port, auth, 'GET', '/lol-gameflow/v1/gameflow-phase') }
+  catch (e) { return { success: false, status: 'client-not-ready', message: 'League client API not reachable yet (' + (e.code || e.message) + '). Wait for the client to finish loading and retry.' } }
   const phase = String(phaseRes.data || '').replace(/"/g, '')
   if (/InProgress|Reconnect|GameStart|ChampSelect/i.test(phase)) return { success: false, status: 'in-game', phase, message: `Gameflow phase ${phase}: writes are blocked.` }
   const get = await deps.lcuRequest(lcu.port, auth, 'GET', '/lol-game-settings/v1/input-settings')

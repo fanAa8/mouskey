@@ -1354,3 +1354,19 @@ kbd { min-width: 27px; padding: 4px 6px; border: 1px solid rgba(255, 255, 255, .
 .v2-chip-info { background: rgba(56,189,248,.12); color: #7dd3fc; }
 .v2-plan { border-top: 1px dashed rgba(255,255,255,.08); padding-top: 6px; display: flex; flex-direction: column; gap: 4px; }
 .v2-mono { font-family: ui-monospace, Consolas, monospace; font-size: 11px; color: #a5b4fc; word-break: break-all; }
+
+/* 3-tab restructure */
+.v2-cat-tabs { display: flex; gap: 8px; margin-bottom: 12px; }
+.v2-cat-tab { display: flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 8px; border: 1px solid var(--line, #d8dde6); background: transparent; cursor: pointer; font-weight: 600; }
+.v2-cat-tab.is-active { background: #1f6feb; color: #fff; border-color: #1f6feb; }
+.v2-profile-split { display: grid; grid-template-columns: minmax(280px, 360px) 1fr; gap: 16px; align-items: start; }
+.v2-visual { display: flex; flex-direction: column; gap: 12px; overflow-x: auto; }
+.v2-bind-row { cursor: pointer; }
+.v2-bind-row.is-selected { outline: 2px solid #1f6feb; border-radius: 6px; }
+.v2-key.fixed { opacity: .75; cursor: default; }
+.key.is-conflict { box-shadow: inset 0 0 0 2px #e5484d; background: #fde8e8; }
+.v2-expand { display: flex; align-items: center; gap: 4px; background: none; border: 0; cursor: pointer; padding: 0; }
+.v2-details { margin-top: 8px; padding: 10px; border-radius: 8px; background: rgba(0,0,0,.03); }
+.v2-details dl { display: grid; grid-template-columns: 90px 1fr; gap: 4px 12px; margin: 0 0 8px; font-size: 13px; }
+.v2-details dt { color: #6b7280; }
+.v2-details dd { margin: 0; word-break: break-all; }

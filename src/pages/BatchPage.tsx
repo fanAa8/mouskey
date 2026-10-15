@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Play, RefreshCw, Eye, Wand2, ShieldAlert } from 'lucide-react'
-import { v2, STATUS_LABEL, type PersonalProfile, type PlanResult, type V2Game } from '../lib/v2api'
+import { Play, RefreshCw, Eye, Wand2, ShieldAlert, ChevronDown, ChevronRight } from 'lucide-react'
+import { v2, STATUS_LABEL, CATEGORY_LABEL, type PersonalProfile, type PlanResult, type V2Game } from '../lib/v2api'
 
 type Mode = 'esdf' | 'profile'
 type ApplyResult = { success?: boolean; message?: string; blocked?: boolean; needsConfirm?: boolean; unknown?: string[]; afterWrite?: string | null; stub?: boolean }
 
+/** 游戏迁移: game list (expand for details/strategy/launch) + batch migration (ESDF shift or a personal profile). */
 export function BatchPage({ onToast }: { onToast: (m: string) => void }) {
   const [games, setGames] = useState<V2Game[]>([])
   const [loading, setLoading] = useState(false)
@@ -16,6 +17,27 @@ export function BatchPage({ onToast }: { onToast: (m: string) => void }) {
   const [results, setResults] = useState<Record<string, ApplyResult>>({})
   const [confirmed, setConfirmed] = useState<Set<string>>(new Set())
   const [busy, setBusy] = useState(false)
+  const [expanded, setExpanded] = useState<string | null>(null)
+  const [backups, setBackups] = useState<Record<string, Array<{ path: string; dir: boolean }>>>({})
+  const expand = async (gid: string) => {
+    if (expanded === gid) { setExpanded(null); return }
+    setExpanded(gid)
+    const r = await v2<{ files: Array<{ path: string; dir: boolean }> }>('backups', { gameId: gid })
+    setBackups((b) => ({ ...b, [gid]: r.files || [] }))
+  }
+  const mark = async (gid: string, status: string) => {
+    const r = await v2('status.set', { gameId: gid, plan: games.find((g) => g.gameId === gid)?.strategy || 'manual', status })
+    onToast(r.success ? `已标记为「${STATUS_LABEL[status]}」` : (r.message || '标记失败')); if (r.success) void load()
+  }
+  const previewOne = async (gid: string) => {
+    const r = await v2<{ results: PlanResult[] }>('plan', { mode, profileId, gameIds: [gid] })
+    if (r.results) setPlans((p) => ({ ...p, ...Object.fromEntries(r.results.map((x) => [x.gameId, x])) }))
+  }
+  const fitNote = (g: V2Game): string | null => {
+    if (mode !== 'profile' || !profile) return null
+    if (profile.movementMode === 'mouse') return g.adapter === 'lol' ? '点击移动：切换为点击移动 + 技能键' : '键盘移动游戏：鼠标方案只应用技能/物品类动作'
+    return g.adapter === 'lol' ? '点击移动游戏：键盘方案只应用技能类动作（移动方式不变）' : null
+  }
 
   const load = async () => {
     setLoading(true)
@@ -70,13 +92,17 @@ export function BatchPage({ onToast }: { onToast: (m: string) => void }) {
           </div>
           {mode === 'profile' && (
             <select className="profile-select" value={profileId} onChange={(e) => { setProfileId(e.target.value); setPlans({}) }}>
-              {profiles.map((p) => <option key={p.id} value={p.id}>{p.name} · {p.movementMode === 'mouse' ? '鼠标点击移动' : '键盘移动'}</option>)}
+              {(['keyboard', 'mouse'] as const).map((m) => (
+                <optgroup key={m} label={CATEGORY_LABEL[m]}>
+                  {profiles.filter((p) => p.movementMode === m).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </optgroup>
+              ))}
             </select>
           )}
         </div>
         <p className="v2-muted">
           {mode === 'esdf'
-            ? '把每款游戏里 WASD 一侧的字母键整体右移一列（Q→W、W→E…），复用已验证的配置/Input.ini 策略。补丁 pak、UE4SS、Unity 补丁等高级策略仍在「按键配置」页的策略面板里单独确认。'
+            ? '把每款游戏里 WASD 一侧的字母键整体右移一列（Q→W、W→E…），复用已验证的配置/Input.ini/LCU 策略。补丁 pak、UE4SS、Unity 补丁等高级策略不会批量自动执行，点开游戏可查看策略详情。'
             : profile?.movementMode === 'mouse'
               ? '点击移动方案：英雄联盟切到点击移动并改技能键；其他游戏只应用技能类动作。'
               : '键盘方案：按语义把你的动作映射到每款游戏的原生动作；未识别的动作需要勾选确认。'}
@@ -98,8 +124,10 @@ export function BatchPage({ onToast }: { onToast: (m: string) => void }) {
               <div className="v2-game-head">
                 <label className="v2-check">
                   <input type="checkbox" checked={selected.has(g.gameId)} disabled={g.requirements.unsupported} onChange={() => toggle(g.gameId)} />
-                  <span className="v2-game-name">{g.name}</span>
                 </label>
+                <button className="v2-expand" onClick={() => void expand(g.gameId)}>
+                  {expanded === g.gameId ? <ChevronDown size={14} /> : <ChevronRight size={14} />}<span className="v2-game-name">{g.name}</span>
+                </button>
                 <span className="v2-tag">{g.engineType || '其他'}</span>
                 <span className="v2-tag">{g.strategyLabel}</span>
                 {g.status && <span className={`v2-tag v2-status-${g.status}`}>{STATUS_LABEL[g.status]}</span>}
@@ -109,7 +137,29 @@ export function BatchPage({ onToast }: { onToast: (m: string) => void }) {
               <div className="v2-chips">
                 {g.requirements.chips.map((c, i) => <span key={i} className={`v2-chip v2-chip-${c.level}`}>{c.level === 'block' && <ShieldAlert size={12} />}{c.text}</span>)}
                 {g.skippedIneffective.length > 0 && <span className="v2-chip v2-chip-info">已跳过无效策略：{g.skippedIneffective.join('、')}</span>}
+                {fitNote(g) && <span className="v2-chip v2-chip-warn">{fitNote(g)}</span>}
               </div>
+              {expanded === g.gameId && (
+                <div className="v2-details">
+                  <dl>
+                    <dt>安装目录</dt><dd className="v2-mono">{g.installPath || '—'}</dd>
+                    <dt>配置文件</dt><dd className="v2-mono">{g.configPath ? `${g.configPath}${g.configFileName ? `\\${g.configFileName}` : ''}` : '—'}</dd>
+                    <dt>适配器</dt><dd>{g.adapter}{g.gameProcess ? ` · 进程 ${g.gameProcess}` : ''}</dd>
+                    <dt>反作弊</dt><dd>{g.antiCheat.length ? g.antiCheat.join('、') + '（不支持）' : '未检测到'}</dd>
+                    <dt>当前策略</dt><dd>{g.strategyLabel}</dd>
+                    <dt>候选策略</dt><dd>{g.strategyCandidates.length ? g.strategyCandidates.join(' → ') : '无'}</dd>
+                    <dt>启动方式</dt><dd>{g.launch.label}</dd>
+                    <dt>历史</dt><dd>{g.history.length ? g.history.slice(-6).map((h, i) => <div key={i}>{h.at?.slice(0, 16).replace('T', ' ')} {h.plan} · {STATUS_LABEL[h.status] ?? h.status}</div>) : '无记录'}</dd>
+                    <dt>备份</dt><dd className="v2-mono">{(backups[g.gameId] || []).length ? backups[g.gameId].slice(0, 10).map((f) => <div key={f.path}>{f.path}{f.dir ? '\\' : ''}</div>) : '无'}</dd>
+                  </dl>
+                  <div className="v2-toolbar">
+                    <button className="subtle-button v2-btn" onClick={() => void previewOne(g.gameId)}><Eye size={13} />预览本游戏</button>
+                    <button className="subtle-button v2-btn" onClick={() => launch(g.gameId)} disabled={g.launch.type === 'none'}><Play size={13} />启动游戏</button>
+                    <button className="subtle-button v2-btn" onClick={() => void mark(g.gameId, 'verified-in-game')}>标记游戏内已验证</button>
+                    <button className="subtle-button v2-btn" onClick={() => void mark(g.gameId, 'ineffective')}>标记无效</button>
+                  </div>
+                </div>
+              )}
               {plan && (
                 <div className="v2-plan">
                   <div className={plan.ok ? 'v2-ok' : 'v2-muted'}>{plan.message}</div>

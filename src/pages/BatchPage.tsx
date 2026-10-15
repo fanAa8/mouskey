@@ -10,7 +10,7 @@ type ApplyResult = { success?: boolean; message?: string; blocked?: boolean; nee
 export function BatchPage({ onToast }: { onToast: (m: string) => void }) {
   const [games, setGames] = useState<V2Game[]>([])
   const [loading, setLoading] = useState(false)
-  const [mode, setMode] = useState<Mode>('esdf')
+  const [mode, setMode] = useState<Mode>('profile')
   const [profiles, setProfiles] = useState<PersonalProfile[]>([])
   const [profileId, setProfileId] = useState('')
   const [selected, setSelected] = useState<Set<string>>(new Set())
@@ -76,7 +76,7 @@ export function BatchPage({ onToast }: { onToast: (m: string) => void }) {
     try {
       const [g, p] = await Promise.all([v2<{ games: V2Game[] }>('games'), v2<{ profiles: PersonalProfile[] }>('profiles.list')])
       if (g.games) setGames(g.games); else onToast(g.message || '扫描失败')
-      if (p.profiles) { setProfiles(p.profiles); if (!profileId && p.profiles[0]) setProfileId(p.profiles[0].id) }
+      if (p.profiles) { setProfiles(p.profiles); if (p.profiles[0] && !p.profiles.some((x) => x.id === profileId)) setProfileId(p.profiles[0].id) }
     } finally { setLoading(false) }
   }
   useEffect(() => { void load() }, []) // eslint-disable-line react-hooks/exhaustive-deps
@@ -119,8 +119,8 @@ export function BatchPage({ onToast }: { onToast: (m: string) => void }) {
       <div className="v2-card">
         <div className="v2-field">迁移方式
           <div className="v2-seg">
-            <button className={mode === 'esdf' ? 'is-active' : ''} onClick={() => { setMode('esdf'); setPlans({}) }}>WASD 整体平移 ESDF</button>
-            <button className={mode === 'profile' ? 'is-active' : ''} onClick={() => { setMode('profile'); setPlans({}) }}>应用我的个人方案</button>
+            <button className={mode === 'profile' ? 'is-active' : ''} onClick={() => { setMode('profile'); setPlans({}) }}>个人方案</button>
+            <button className={mode === 'esdf' ? 'is-active' : ''} onClick={() => { setMode('esdf'); setPlans({}) }}>ESDF 方案</button>
           </div>
           {mode === 'profile' && (
             <Select ariaLabel="选择个人方案" value={profileId} onChange={(v) => { setProfileId(v); setPlans({}) }}
@@ -129,7 +129,7 @@ export function BatchPage({ onToast }: { onToast: (m: string) => void }) {
         </div>
         <p className="v2-muted">
           {mode === 'esdf'
-            ? '把每款游戏里 WASD 一侧的字母键整体右移一列（Q→W、W→E…），复用已验证的配置/Input.ini/LCU 策略。补丁 pak、UE4SS、Unity 补丁等高级策略不会批量自动执行，点开游戏可按优先级逐个安装/卸载，标记无效后自动推荐下一种。'
+            ? '固定的 ESDF 方案：移动键 WASD → ESDF（W→E、A→S、S→D、D→F），复用已验证的配置/Input.ini 策略。写入前先检测：已是 ESDF 或已被 MousKey 改过（已写入配置 / 已装补丁或注入）的游戏会显示「已是 ESDF，跳过」，不会二次平移。补丁 pak、UE4SS、Unity 补丁等高级策略不会批量自动执行，点开游戏可逐个安装/卸载。'
             : profile?.movementMode === 'mouse'
               ? '点击移动方案：英雄联盟切到点击移动并改技能键；其他游戏只应用技能类动作。'
               : '键盘方案：按语义把你的动作映射到每款游戏的原生动作；未识别的动作需要勾选确认。'}

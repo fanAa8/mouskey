@@ -124,9 +124,10 @@ const launch = ({ gameId, dryRun = false, opener } = {}) => {
 
 // ─── personal profiles (stored next to presets) ───
 const safeId = (s) => String(s || '').replace(/[^\w\-]/g, '_').slice(0, 64)
+const hasKeyConflict = (p) => { const seen = new Set(); for (const k of Object.values((p && p.bindings) || {})) { if (seen.has(k)) return true; seen.add(k) } return false }
 const listProfiles = () => {
   const d = profilesDir(); const out = sem.BUILTIN_PROFILES.map((p) => ({ ...p }))
-  if (existsSync(d)) for (const f of readdirSync(d).filter((x) => x.endsWith('.json'))) { try { out.push(JSON.parse(readFileSync(join(d, f), 'utf8'))) } catch { /* skip */ } }
+  if (existsSync(d)) for (const f of readdirSync(d).filter((x) => x.endsWith('.json'))) { try { const p = JSON.parse(readFileSync(join(d, f), 'utf8')); if (/^(seed|preset)-/.test(String(p.id)) && hasKeyConflict(p)) continue; out.push(p) } catch { /* skip */ } }
   return { success: true, profiles: out, dir: d, catalog: sem.CATALOG, mouseCatalog: sem.MOUSE_CATALOG }
 }
 const saveProfile = (p = {}) => {
@@ -152,7 +153,7 @@ const migrateProfiles = ({ seeds = [] } = {}) => {
   const created = []
   const put = (old, prefix) => {
     const p = sem.convertOldProfile(old, prefix); const id = safeId(p.id)
-    if (existing.has(id) || !Object.keys(p.bindings).length) return
+    if (existing.has(id) || !Object.keys(p.bindings).length || hasKeyConflict(p)) return
     writeFileSync(join(profilesDir(), `${id}.json`), JSON.stringify({ ...p, id, updatedAt: new Date().toISOString() }, null, 2)); existing.add(id); created.push({ id, name: p.name, movementMode: p.movementMode })
   }
   for (const sd of seeds) if (sd && sd.id && sd.bindings) put(sd, 'seed-')
@@ -189,6 +190,8 @@ const planProfile = ({ mode = 'esdf', profileId, gameIds = [] } = {}) => {
     if (info.requirements.unsupported) { out.push({ gameId: gid, name: info.name, ok: false, blocked: true, message: info.requirements.chips[0].text, info }); continue }
     if (mode === 'esdf') {
       const p = info.strategy === 'lcu' ? { success: false, message: '英雄联盟请使用个人方案（点击移动 + 技能键）' } : api().previewEsdfConfig({ gameId: gid, gameName: raw.name, configPath: raw.configPath, fileName: raw.configFileName, steamAppId: raw.steamAppId })
+      const inst = installedState(raw); const already = p.status === 'already-esdf' || configWritten(info) || Object.values(inst).some(Boolean)
+      if (already) { out.push({ gameId: gid, name: info.name, ok: false, mode, strategy: info.strategy, changes: [], status: 'already-esdf', message: '已是 ESDF，跳过', info }); continue }
       out.push({ gameId: gid, name: info.name, ok: !!p.success, mode, strategy: info.strategy, changes: p.changes || [], status: p.status, message: p.message, info })
       continue
     }
@@ -229,8 +232,12 @@ const applyOne = async ({ mode = 'esdf', profileId, gameId, confirmUnknown = fal
   if (forceStrategy) info.strategy = forceStrategy
   if (mode === 'esdf') {
     if (info.strategy !== 'config' && info.strategy !== 'ue4-clearArray') return { success: false, message: `该游戏的 ESDF 需走「${info.strategyLabel}」策略：请在「游戏迁移」点开该游戏，在「修改方式」里选择（批量不会自动安装模组/补丁）` }
+    // Never shift twice: if the game is already ESDF/modified (config written by MousKey, patch/injection installed, or current bindings read as ESDF) skip without writing.
     const inst = installedState(raw); const on = Object.keys(inst).filter((k) => inst[k])
-    if (on.length) return { success: false, blocked: true, message: `已安装「${on.map((o) => STRATEGY_LABEL[o]).join('、')}」，批量写配置会双重平移；请在游戏详情里先卸载` }
+    if (on.length) return { success: true, skipped: true, alreadyEsdf: true, message: `已是 ESDF，跳过（已安装「${on.map((o) => STRATEGY_LABEL[o]).join('、')}」）` }
+    if (configWritten(info)) return { success: true, skipped: true, alreadyEsdf: true, message: '已是 ESDF，跳过（MousKey 已写入过该游戏配置）' }
+    const pv = api().previewEsdfConfig({ gameId, gameName: raw.name, configPath: raw.configPath, fileName: raw.configFileName, steamAppId: raw.steamAppId })
+    if (pv && pv.status === 'already-esdf') return { success: true, skipped: true, alreadyEsdf: true, message: '已是 ESDF，跳过（当前键位已是 ESDF）' }
     result = api().migrateEsdfConfig({ gameId, gameName: raw.name, configPath: raw.configPath, fileName: raw.configFileName, steamAppId: raw.steamAppId })
   } else {
     const profile = getProfile(profileId); if (!profile) return { success: false, message: '未找到个人方案' }
@@ -405,4 +412,4 @@ const dispatch = async (action, body = {}, extra = {}) => {
   }
 }
 
-module.exports = { configWritten, configBackups, restoreConfig, listMethods, runMethod, methodOrder, migrateProfiles, listBackups, dispatch, selectStrategy, listProfiles, saveProfile, deleteProfile, planProfile, STRATEGY_LABEL }
+module.exports = { hasKeyConflict, configWritten, configBackups, restoreConfig, listMethods, runMethod, methodOrder, migrateProfiles, listBackups, dispatch, selectStrategy, listProfiles, saveProfile, deleteProfile, planProfile, STRATEGY_LABEL }

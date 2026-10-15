@@ -30,8 +30,34 @@ const CATALOG = [
   ['system', 'map', '地图', 'M'],
   ['system', 'inventory', '背包', 'TAB'],
   ['system', 'emote', '表情轮盘', 'T'],
-].map(([group, id, label, wasdDefault, movement]) => ({ group, id, label, wasdDefault, movement: !!movement }))
-const BY_ID = Object.fromEntries(CATALOG.map((a) => [a.id, a]))
+].map(([group, id, label, wasdDefault, movement]) => ({ group, id, label, wasdDefault, movement: !!movement, category: 'keyboard' }))
+
+// 鼠标点击移动类（MOBA）：没有前后左右，鼠标语义 + 技能/召唤师/物品/饰品/指令
+const MOUSE_CATALOG = [
+  ['mouse', 'move_click', '鼠标右键：移动', 'MOUSE2', true],
+  ['mouse', 'attack_select', '鼠标左键：攻击/选择', 'MOUSE1', true],
+  ['command', 'attack_move', '攻击移动', 'A'],
+  ['command', 'stop', '停止', 'S'],
+  ['command', 'hold', '原地不动', 'H'],
+  ['abilities', 'ability1', '技能1（Q）', 'Q'],
+  ['abilities', 'ability2', '技能2（W）', 'W'],
+  ['abilities', 'ability3', '技能3（E）', 'E'],
+  ['abilities', 'ability4', '大招（R）', 'R'],
+  ['summoner', 'summoner1', '召唤师技能1', 'D'],
+  ['summoner', 'summoner2', '召唤师技能2', 'F'],
+  ['items', 'item1', '物品1', '1'], ['items', 'item2', '物品2', '2'], ['items', 'item3', '物品3', '3'],
+  ['items', 'item4', '物品4', '5'], ['items', 'item5', '物品5', '6'], ['items', 'item6', '物品6', '7'],
+  ['items', 'trinket', '饰品/眼', '4'],
+  ['system', 'recall', '回城', 'B'],
+  ['system', 'shop', '商店', 'P'],
+  ['system', 'ping', '信号', 'G'],
+  ['system', 'camera_lock', '锁定视角', 'Y'],
+  ['system', 'camera_snap', '视角回到英雄', 'SPACE'],
+  ['system', 'emote', '表情轮盘', 'T'],
+  ['system', 'map', '地图/记分板', 'TAB'],
+].map(([group, id, label, wasdDefault, fixedMouse]) => ({ group, id, label, wasdDefault, movement: false, fixedMouse: !!fixedMouse, category: 'mouse' }))
+const catalogFor = (movementMode) => (movementMode === 'mouse' ? MOUSE_CATALOG : CATALOG)
+const BY_ID = Object.fromEntries([...MOUSE_CATALOG, ...CATALOG].map((a) => [a.id, a]))
 
 // Engine-level synonym table: native action name (lowercased, punctuation stripped) → canonical id
 const SYN = {
@@ -88,6 +114,7 @@ const lolAdapter = {
     summoner2: ['evtCastAvatarSpell2', 'evtSmartCastAvatarSpell2:Shift', 'evtSelfCastAvatarSpell2:Alt'],
     item1: ['evtUseItem1'], item2: ['evtUseItem2'], item3: ['evtUseItem3'], item4: ['evtUseItem4'], item5: ['evtUseItem5'], item6: ['evtUseItem6'],
     trinket: ['evtUseVisionItem'], emote: ['evtRadialEmoteInstantOpen'],
+    recall: ['evtUseItem7'], camera_lock: ['evtCameraLockToggle'], camera_snap: ['evtCameraSnap'],
   },
 }
 const battleriteAdapter = {
@@ -143,6 +170,7 @@ const mapProfileToGame = (profile, game, nativeActions = []) => {
     for (const [cid, key] of entries) {
       if (!key) continue
       const meta = BY_ID[cid]
+      if (meta && meta.fixedMouse) { out.skipped.push({ canonical: cid, reason: '鼠标语义（游戏内固定，仅展示）' }); continue }
       if (meta && meta.movement && (mouseMode || !ad.keyboardMovement)) { out.skipped.push({ canonical: cid, reason: mouseMode ? '鼠标方案不改移动' : '该游戏无键盘移动' }); continue }
       const targets = ad.native[cid]
       if (!targets) { out.skipped.push({ canonical: cid, reason: '该游戏没有对应动作' }); continue }
@@ -159,6 +187,7 @@ const mapProfileToGame = (profile, game, nativeActions = []) => {
     for (const [cid, key] of entries) {
       if (!key) continue
       const meta = BY_ID[cid]
+      if (meta && meta.fixedMouse) { out.skipped.push({ canonical: cid, reason: '鼠标语义（仅展示）' }); continue }
       if (meta && meta.movement && mouseMode) { out.skipped.push({ canonical: cid, reason: '鼠标方案不改移动' }); continue }
       const natives = byCanon[cid]
       if (!natives) { out.skipped.push({ canonical: cid, reason: nativeActions.length ? '游戏动作表中未找到' : '未读取到游戏动作表' }); continue }
@@ -179,11 +208,37 @@ const isEsdfShiftOfWasd = (profile) => {
   return b.move_forward === 'E' && b.move_left === 'S' && b.move_back === 'D' && b.move_right === 'F'
 }
 
+const WASD_BASE = { move_forward: 'W', move_back: 'S', move_left: 'A', move_right: 'D', jump: 'SPACE', crouch: 'LCTRL', sprint: 'LSHIFT', interact: 'E', reload: 'R', flashlight: 'F', attack: 'MOUSE1', aim: 'MOUSE2', ability1: 'Q', ability2: 'E', ability3: 'R', ability4: 'F', item1: '1', item2: '2', item3: '3', map: 'M', inventory: 'TAB' }
+const MOBA_QWER = { move_click: 'MOUSE2', attack_select: 'MOUSE1', attack_move: 'A', stop: 'S', hold: 'H', ability1: 'Q', ability2: 'W', ability3: 'E', ability4: 'R', summoner1: 'D', summoner2: 'F', item1: '1', item2: '2', item3: '3', item4: '5', item5: '6', item6: '7', trinket: '4', recall: 'B', shop: 'P', ping: 'G', camera_lock: 'Y', camera_snap: 'SPACE', emote: 'T', map: 'TAB' }
+
+// ─── old (按键配置页) ActionId / key names → v2 ───
+const OLD_ACTION = { forward: 'move_forward', back: 'move_back', left: 'move_left', right: 'move_right', primary: 'attack', secondary: 'aim', ability1: 'ability1', ability2: 'ability2', ability3: 'ability3', ultimate: 'ability4', summoner1: 'summoner1', summoner2: 'summoner2', interact: 'interact', inventory1: 'item1', inventory2: 'item2', inventory3: 'item3', inventory4: 'item4', inventory5: 'item5', inventory6: 'item6', trinket: 'trinket', jump: 'jump', map: 'map', ping: 'ping', recall: 'recall', shop: 'shop', camera_snap: 'camera_snap', camera_lock: 'camera_lock', stop: 'stop', hold_position: 'hold', attack_move: 'attack_move' }
+const OLD_ACTION_MOUSE = { ...OLD_ACTION, primary: 'attack_select', secondary: 'move_click' }
+const oldKeyToV2 = (k) => {
+  if (!k) return ''
+  const m = /^Mouse (\d)$/i.exec(k); if (m) return `MOUSE${m[1]}`
+  const t = { Space: 'SPACE', Shift: 'LSHIFT', 'Shift R': 'RSHIFT', Ctrl: 'LCTRL', 'Ctrl R': 'RCTRL', Alt: 'LALT', 'Alt R': 'RALT', Tab: 'TAB', Caps: 'CAPS', Esc: 'ESC', Enter: 'ENTER', Backspace: 'BACKSPACE', 'Mouse Wheel': 'MOUSE3' }
+  return t[k] || String(k).toUpperCase()
+}
+/** Convert an old profile/preset ({category, bindings: {actionId: key}} or [{id,key}]) to a v2 personal profile. */
+const convertOldProfile = (old, idPrefix = 'migrated-') => {
+  const mode = old.category === 'moba' ? 'mouse' : 'keyboard'
+  const table = mode === 'mouse' ? OLD_ACTION_MOUSE : OLD_ACTION
+  const src = Array.isArray(old.bindings) ? Object.fromEntries(old.bindings.map((b) => [b.id, b.key])) : (old.bindings || {})
+  const allowed = new Set(catalogFor(mode).map((a) => a.id))
+  const bindings = {}
+  for (const [aid, key] of Object.entries(src)) { const c = table[aid]; if (c && allowed.has(c) && key) bindings[c] = oldKeyToV2(key) }
+  return { id: `${idPrefix}${old.id}`, name: old.name, movementMode: mode, bindings, note: old.note || '从旧版预设迁移', migratedFrom: old.id }
+}
+
+// Built-in templates (read-only). Old 按键配置 seeds become profiles in their category.
 const BUILTIN_PROFILES = [
+  { id: 'builtin-wasd', name: 'WASD 标准', builtin: true, movementMode: 'keyboard', bindings: { ...WASD_BASE } },
   { id: 'builtin-esdf', name: 'ESDF 键盘移动', builtin: true, movementMode: 'keyboard',
     bindings: { move_forward: 'E', move_back: 'D', move_left: 'S', move_right: 'F', jump: 'SPACE', crouch: 'LCTRL', sprint: 'LSHIFT', interact: 'R', reload: 'T', flashlight: 'G', ability1: 'W', ability2: 'R', ability3: 'T', ability4: 'G', summoner1: 'D', summoner2: 'F', map: 'M', inventory: 'TAB' } },
   { id: 'builtin-lol-wert', name: 'MOBA 点击移动 · WERT', builtin: true, movementMode: 'mouse',
-    bindings: { ability1: 'W', ability2: 'E', ability3: 'R', ability4: 'T', summoner1: 'D', summoner2: 'F', item1: '1', item2: '2', item3: '3', item4: '5', item5: '6', item6: '7', emote: 'Q' } },
+    bindings: { ...MOBA_QWER, ability1: 'W', ability2: 'E', ability3: 'R', ability4: 'T', emote: 'Q', stop: 'S' } },
+  { id: 'builtin-moba-qwer', name: 'MOBA 点击移动 · 标准 QWER', builtin: true, movementMode: 'mouse', bindings: { ...MOBA_QWER } },
 ]
 
-module.exports = { CATALOG, SYN, guessCanonical, adapterFor, mapProfileToGame, isEsdfShiftOfWasd, BUILTIN_PROFILES, lolKey, brKey }
+module.exports = { MOUSE_CATALOG, catalogFor, convertOldProfile, oldKeyToV2, OLD_ACTION, CATALOG, SYN, guessCanonical, adapterFor, mapProfileToGame, isEsdfShiftOfWasd, BUILTIN_PROFILES, lolKey, brKey }

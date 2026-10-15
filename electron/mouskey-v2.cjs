@@ -127,13 +127,13 @@ const safeId = (s) => String(s || '').replace(/[^\w\-]/g, '_').slice(0, 64)
 const listProfiles = () => {
   const d = profilesDir(); const out = sem.BUILTIN_PROFILES.map((p) => ({ ...p }))
   if (existsSync(d)) for (const f of readdirSync(d).filter((x) => x.endsWith('.json'))) { try { out.push(JSON.parse(readFileSync(join(d, f), 'utf8'))) } catch { /* skip */ } }
-  return { success: true, profiles: out, dir: d, catalog: sem.CATALOG }
+  return { success: true, profiles: out, dir: d, catalog: sem.CATALOG, mouseCatalog: sem.MOUSE_CATALOG }
 }
 const saveProfile = (p = {}) => {
   if (!p.name) return { success: false, message: '方案需要名字' }
   if (!['keyboard', 'mouse'].includes(p.movementMode)) return { success: false, message: 'movementMode 必须是 keyboard 或 mouse' }
   const id = p.id && !String(p.id).startsWith('builtin-') ? safeId(p.id) : `p-${Date.now()}`
-  const known = new Set(sem.CATALOG.map((a) => a.id))
+  const known = new Set(sem.catalogFor(p.movementMode).map((a) => a.id))
   const bindings = Object.fromEntries(Object.entries(p.bindings || {}).filter(([k, v]) => known.has(k) && typeof v === 'string' && v.trim()).map(([k, v]) => [k, v.trim().toUpperCase()]))
   const doc = { id, name: String(p.name).slice(0, 60), movementMode: p.movementMode, bindings, note: p.note || '', updatedAt: new Date().toISOString() }
   mkdirSync(profilesDir(), { recursive: true }); writeFileSync(join(profilesDir(), `${id}.json`), JSON.stringify(doc, null, 2))
@@ -143,6 +143,21 @@ const deleteProfile = ({ id } = {}) => {
   if (!id || String(id).startsWith('builtin-')) return { success: false, message: '内置方案不能删除' }
   const f = join(profilesDir(), `${safeId(id)}.json`); if (existsSync(f)) unlinkSync(f)
   return { success: true }
+}
+/** One-time migration of old 按键配置 seeds (sent by the UI) and saved presets (Documents/Keyforge/presets) into personal profiles. Idempotent by id. */
+const presetsRoot = () => join(os.homedir(), 'Documents', 'Keyforge', 'presets')
+const migrateProfiles = ({ seeds = [] } = {}) => {
+  mkdirSync(profilesDir(), { recursive: true })
+  const existing = new Set(readdirSync(profilesDir()).filter((f) => f.endsWith('.json')).map((f) => f.slice(0, -5)))
+  const created = []
+  const put = (old, prefix) => {
+    const p = sem.convertOldProfile(old, prefix); const id = safeId(p.id)
+    if (existing.has(id) || !Object.keys(p.bindings).length) return
+    writeFileSync(join(profilesDir(), `${id}.json`), JSON.stringify({ ...p, id, updatedAt: new Date().toISOString() }, null, 2)); existing.add(id); created.push({ id, name: p.name, movementMode: p.movementMode })
+  }
+  for (const sd of seeds) if (sd && sd.id && sd.bindings) put(sd, 'seed-')
+  if (existsSync(presetsRoot())) for (const f of readdirSync(presetsRoot()).filter((x) => x.endsWith('.keyforge.json'))) { try { put(JSON.parse(readFileSync(join(presetsRoot(), f), 'utf8')), 'preset-') } catch { /* skip */ } }
+  return { success: true, created }
 }
 const getProfile = (id) => listProfiles().profiles.find((p) => p.id === id) || null
 
@@ -231,9 +246,25 @@ const applyOne = async ({ mode = 'esdf', profileId, gameId, confirmUnknown = fal
   return { ...result, afterWrite: g.afterWrite, launch: info.launch }
 }
 
+/** Read-only: backup files that belong to a game (Documents/Keyforge/backups/* and keyforge_backups next to its config). */
+const listBackups = ({ gameId } = {}) => {
+  const f = findGame(gameId); if (!f) return { success: false, message: '未找到该游戏' }
+  const { raw, info } = f
+  const dirs = []
+  const root = join(os.homedir(), 'Documents', 'Keyforge', 'backups')
+  const names = [raw.name, raw.ue4Project, gameId === 'lol' ? 'LoL' : null, /504370$/.test(gameId) ? 'Battlerite' : null, /shadow ?puppet/i.test(raw.name || '') ? 'ShadowPuppet' : null].filter(Boolean)
+  for (const n of names) dirs.push(join(root, n))
+  if (raw.configPath) dirs.push(join(raw.configPath, 'keyforge_backups'))
+  const files = []
+  for (const d of [...new Set(dirs)]) { if (!existsSync(d)) continue; for (const x of readdirSync(d, { withFileTypes: true })) files.push({ path: join(d, x.name), dir: x.isDirectory() }) }
+  return { success: true, files: files.slice(0, 200), status: info.status }
+}
+
 const dispatch = async (action, body = {}, extra = {}) => {
   switch (action) {
-    case 'catalog': return { success: true, catalog: sem.CATALOG, builtin: sem.BUILTIN_PROFILES }
+    case 'catalog': return { success: true, catalog: sem.CATALOG, mouseCatalog: sem.MOUSE_CATALOG, builtin: sem.BUILTIN_PROFILES }
+    case 'profiles.migrate': return migrateProfiles(body)
+    case 'backups': return listBackups(body)
     case 'games': return listGames()
     case 'launch': return launch({ ...body, opener: extra.opener })
     case 'profiles.list': return listProfiles()
@@ -246,4 +277,4 @@ const dispatch = async (action, body = {}, extra = {}) => {
   }
 }
 
-module.exports = { dispatch, selectStrategy, listProfiles, saveProfile, deleteProfile, planProfile, STRATEGY_LABEL }
+module.exports = { migrateProfiles, listBackups, dispatch, selectStrategy, listProfiles, saveProfile, deleteProfile, planProfile, STRATEGY_LABEL }

@@ -79,6 +79,22 @@ const esdf = sem.BUILTIN_PROFILES.find((p) => p.id === 'builtin-esdf')
     assert(v2.deleteProfile({ id: s.profile.id }).success)
     assert.strictEqual(v2.saveProfile({ name: 'x', movementMode: 'fly' }).success, false)
   })
+  await t('mouse catalog has no WASD rows; mouse profile validated against it', () => {
+    assert(!sem.MOUSE_CATALOG.some((a) => /^move_(forward|back|left|right)$/.test(a.id)))
+    assert(sem.MOUSE_CATALOG.some((a) => a.id === 'move_click' && a.label.includes('鼠标右键')))
+    const s = v2.saveProfile({ name: 'm', movementMode: 'mouse', bindings: { move_forward: 'E', ability1: 'w', stop: 's' } })
+    assert(!('move_forward' in s.profile.bindings) && s.profile.bindings.ability1 === 'W' && s.profile.bindings.stop === 'S'); v2.deleteProfile({ id: s.profile.id })
+  })
+  await t('old seeds/presets migrate into categories (idempotent)', () => {
+    const pd = path.join(tmpHome, 'Documents', 'Keyforge', 'presets'); fs.mkdirSync(pd, { recursive: true })
+    fs.writeFileSync(path.join(pd, 'x.keyforge.json'), JSON.stringify({ id: 'x', name: '我的旧预设', category: 'fps', bindings: { forward: 'E', left: 'S', jump: 'Space', primary: 'Mouse 1' } }))
+    const seeds = [{ id: 'lol-traditional', name: '英雄联盟·传统模式', category: 'moba', bindings: [{ id: 'ability1', key: 'Q' }, { id: 'secondary', key: 'Mouse 2' }, { id: 'forward', key: 'W' }] }]
+    const r = v2.migrateProfiles({ seeds }); assert.strictEqual(r.created.length, 2)
+    const all = v2.listProfiles().profiles
+    const fps = all.find((p) => p.id === 'preset-x'); assert.strictEqual(fps.movementMode, 'keyboard'); assert.strictEqual(fps.bindings.move_forward, 'E'); assert.strictEqual(fps.bindings.jump, 'SPACE'); assert.strictEqual(fps.bindings.attack, 'MOUSE1')
+    const moba = all.find((p) => p.id === 'seed-lol-traditional'); assert.strictEqual(moba.movementMode, 'mouse'); assert.strictEqual(moba.bindings.move_click, 'MOUSE2'); assert(!('move_forward' in moba.bindings))
+    assert.strictEqual(v2.migrateProfiles({ seeds }).created.length, 0)
+  })
   await t('LoL generic: keeps secondary binds, detects collisions, dry run', async () => {
     let state = { GameEvents: { evtCastSpell1: '[q]', evtLevelSpell1: '[Ctrl][q],[Alt][Button 2]', evtRadialEmoteInstantOpen: '[t]' } }
     const deps = { isGameRunning: () => false, findLcuApi: () => ({ port: 1, token: 'x' }), buildLolCandidates: () => [],

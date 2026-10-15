@@ -2,6 +2,7 @@ const {execFileSync} = require('node:child_process');
 const ue4g = require('./ue4-generic.cjs');
 const ue4s = require('./ue4-strategies.cjs');
 const unitys = require('./unity-strategies.cjs');
+const br = require('./battlerite.cjs');
 const {existsSync, mkdirSync, readFileSync, readdirSync, copyFileSync, writeFileSync, unlinkSync, watch} = require('node:fs');
 const {basename, dirname, join, normalize, resolve} = require('node:path');
 const https = require('node:https');
@@ -3064,7 +3065,7 @@ const migrateEsdfConfig = (req) => {
       result = migrateUe4InputIni(content)
       break
     case 'json':
-      result = migrateJsonKeys(content)
+      result = migrateJsonKeys(br.withDefaults(configFileName, content))
       break
     case 'source-cfg':
       result = migrateSourceCfg(content)
@@ -3126,6 +3127,13 @@ const migrateEsdfConfig = (req) => {
   const extraWritten = []
   try {
     verification = writeAndVerify(filePath, nextContent, enc, result.added)
+    // Steam Cloud copy (e.g. Battlerite userdata/<id>/504370/remote/KMInput, UTF-16): mirror when it matched
+    if (format === 'json') {
+      try {
+        const cloud = br.mirrorToCloud({ steamPath: getSteamPath(), appId: br.appIdFromGameId(req.gameId), fileName: configFileName, origText: content, newText: nextContent, label: req.gameName || req.gameId })
+        for (const c of cloud) extraWritten.push(c)
+      } catch (e) { extraWritten.push({ error: String(e) }) }
+    }
     // UE: also write the sibling platform dir when we can't tell which one the game uses
     if (ue4Plan && ue4Plan.targets) {
       for (const t of ue4Plan.targets.slice(1)) {
@@ -3231,7 +3239,7 @@ const previewEsdfConfig = (req) => {
   }
   if (!result) switch (format) {
     case 'ue4-ini': result = migrateUe4InputIni(content); break
-    case 'json': result = migrateJsonKeys(content); break
+    case 'json': result = migrateJsonKeys(br.withDefaults(configFileName, content)); break
     case 'source-cfg': result = migrateSourceCfg(content); break
     default: result = migrateIniKeys(content); break
   }

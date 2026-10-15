@@ -33,6 +33,7 @@ import {
   Download,
   Wrench,
   Info,
+  UserRound,
 } from 'lucide-react'
 import {
   type ActionId,
@@ -57,6 +58,8 @@ import {
   formatNativeConfig,
   getConfigFileName,
 } from './adapters'
+import { BatchPage } from './pages/BatchPage'
+import { PersonalProfilePage } from './pages/PersonalProfilePage'
 import { applyEsdfMigration, isEmptyKey, shouldShiftKey, getShiftTarget, detectKeyConflicts } from './lib/esdfMigration'
 
 const categories: { id: Category | 'all'; label: string }[] = [
@@ -393,7 +396,7 @@ function App() {
   const [inputHistory, setInputHistory] = useState<Array<{ key: string; state: string; time: number }>>([])
   const [totalKeyPresses, setTotalKeyPresses] = useState(0)
   const [isEsdfActive, setIsEsdfActive] = useState(true)
-  const [activePage, setActivePage] = useState<'config' | 'sync'>('config')
+  const [activePage, setActivePage] = useState<'config' | 'batch' | 'personal' | 'sync'>('config')
 
   // LoL optional read/watch (preserved as optional enhancement, not blocking)
   const [lolRead, setLolRead] = useState<LolReadResult | null>(null)
@@ -1581,7 +1584,7 @@ function App() {
       <section className="workspace">
         <header className="workspace-header">
           <div>
-            <div className="breadcrumb">控制中心 <span>/</span> {activePage === 'config' ? '配置档' : '实时显示'}</div>
+            <div className="breadcrumb">控制中心 <span>/</span> {({ config: '配置档', batch: '批量迁移', personal: '个人方案', sync: '实时显示' } as const)[activePage]}</div>
             <div className="title-row">
               {activePage === 'config' ? (
                 isEditingProfileName ? (
@@ -1618,7 +1621,7 @@ function App() {
                   </h1>
                 )
               ) : (
-                <h1>实时按键显示</h1>
+                <h1>{activePage === 'batch' ? '批量迁移' : activePage === 'personal' ? '个人方案' : '实时按键显示'}</h1>
               )}
               {activePage === 'config' && <span className="saved-status"><Check size={13} /> 已保存</span>}
             </div>
@@ -1626,6 +1629,12 @@ function App() {
           <div className="page-tabs">
             <button className={`page-tab ${activePage === 'config' ? 'is-active' : ''}`} onClick={() => setActivePage('config')}>
               <Keyboard size={14} /> 按键配置
+            </button>
+            <button className={`page-tab ${activePage === 'batch' ? 'is-active' : ''}`} onClick={() => setActivePage('batch')}>
+              <ArrowRightLeft size={14} /> 批量迁移
+            </button>
+            <button className={`page-tab ${activePage === 'personal' ? 'is-active' : ''}`} onClick={() => setActivePage('personal')}>
+              <UserRound size={14} /> 个人方案
             </button>
             <button className={`page-tab ${activePage === 'sync' ? 'is-active' : ''}`} onClick={() => setActivePage('sync')}>
               <Activity size={14} /> 实时显示
@@ -2243,6 +2252,9 @@ function App() {
         </section>
         </>
         )}
+
+        {activePage === 'batch' && <BatchPage onToast={setToast} />}
+        {activePage === 'personal' && <PersonalProfilePage onToast={setToast} />}
 
         {activePage === 'sync' && (
           <section className="realtime-page">

@@ -35,7 +35,6 @@ export function Select({ value, options, onChange, placeholder = '请选择', cl
     else if (e.key === 'Escape' || e.key === 'Tab') setOpen(false)
     else if (e.key.length === 1) { const i = options.findIndex((o) => !o.disabled && o.label.toLowerCase().startsWith(e.key.toLowerCase())); if (i >= 0) setActive(i) }
   }
-  let lastGroup: string | undefined
   return (
     <div ref={root} className={`mk-select ${open ? 'is-open' : ''} ${className}`}>
       <button type="button" className="mk-select-trigger" aria-haspopup="listbox" aria-expanded={open} aria-label={ariaLabel} onClick={() => (open ? setOpen(false) : openList())} onKeyDown={onKey}>
@@ -44,8 +43,7 @@ export function Select({ value, options, onChange, placeholder = '请选择', cl
       {open && (
         <div ref={list} className="mk-select-list" role="listbox" aria-activedescendant={active >= 0 ? `mk-opt-${active}` : undefined}>
           {options.map((o, i) => {
-            const head = o.group && o.group !== lastGroup ? <div className="mk-select-group" role="presentation">{o.group}</div> : null
-            lastGroup = o.group
+            const head = o.group && o.group !== options[i - 1]?.group ? <div className="mk-select-group" role="presentation">{o.group}</div> : null
             return (
               <div key={o.value} style={{ display: 'contents' }}>
                 {head}

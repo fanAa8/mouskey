@@ -17,16 +17,16 @@ const CATALOG = [
   ['action', 'attack', '攻击/主键', 'MOUSE1'],
   ['action', 'aim', '瞄准/副键', 'MOUSE2'],
   ['abilities', 'ability1', '技能1', 'Q'],
-  ['abilities', 'ability2', '技能2', 'W'],
-  ['abilities', 'ability3', '技能3', 'E'],
-  ['abilities', 'ability4', '技能4/大招', 'R'],
-  ['abilities', 'ability5', '技能5', 'F'],
+  ['abilities', 'ability2', '技能2', 'Z'],
+  ['abilities', 'ability3', '技能3', 'X'],
+  ['abilities', 'ability4', '技能4/大招', 'C'],
+  ['abilities', 'ability5', '技能5', 'V'],
   ['abilities', 'ability6', '技能6', 'G'],
-  ['summoner', 'summoner1', '召唤师技能1', 'D'],
-  ['summoner', 'summoner2', '召唤师技能2', 'F'],
+  ['summoner', 'summoner1', '召唤师技能1', ''],
+  ['summoner', 'summoner2', '召唤师技能2', ''],
   ['items', 'item1', '物品1', '1'], ['items', 'item2', '物品2', '2'], ['items', 'item3', '物品3', '3'],
   ['items', 'item4', '物品4', '4'], ['items', 'item5', '物品5', '5'], ['items', 'item6', '物品6', '6'],
-  ['items', 'trinket', '饰品/眼', '4'],
+  ['items', 'trinket', '饰品/眼', '7'],
   ['system', 'map', '地图', 'M'],
   ['system', 'inventory', '背包', 'TAB'],
   ['system', 'emote', '表情轮盘', 'T'],
@@ -208,7 +208,6 @@ const isEsdfShiftOfWasd = (profile) => {
   return b.move_forward === 'E' && b.move_left === 'S' && b.move_back === 'D' && b.move_right === 'F'
 }
 
-const WASD_BASE = { move_forward: 'W', move_back: 'S', move_left: 'A', move_right: 'D', jump: 'SPACE', crouch: 'LCTRL', sprint: 'LSHIFT', interact: 'E', reload: 'R', flashlight: 'F', attack: 'MOUSE1', aim: 'MOUSE2', ability1: 'Q', ability2: 'E', ability3: 'R', ability4: 'F', item1: '1', item2: '2', item3: '3', map: 'M', inventory: 'TAB' }
 const MOBA_QWER = { move_click: 'MOUSE2', attack_select: 'MOUSE1', attack_move: 'A', stop: 'S', hold: 'H', ability1: 'Q', ability2: 'W', ability3: 'E', ability4: 'R', summoner1: 'D', summoner2: 'F', item1: '1', item2: '2', item3: '3', item4: '5', item5: '6', item6: '7', trinket: '4', recall: 'B', shop: 'P', ping: 'G', camera_lock: 'Y', camera_snap: 'SPACE', emote: 'T', map: 'TAB' }
 
 // ─── old (按键配置页) ActionId / key names → v2 ───
@@ -232,10 +231,16 @@ const convertOldProfile = (old, idPrefix = 'migrated-') => {
 }
 
 // Built-in templates (read-only). Old 按键配置 seeds become profiles in their category.
+// Built-ins are conflict-free: shooter/explore (interact/reload/flashlight) and skill/RPG (abilities on Q/E/R/F) are separate templates,
+// because in real games those share keys per game, not within one profile.
+const MOVE_W = { move_forward: 'W', move_back: 'S', move_left: 'A', move_right: 'D' }
+const MOVE_E = { move_forward: 'E', move_back: 'D', move_left: 'S', move_right: 'F' }
+const COMMON = { jump: 'SPACE', crouch: 'LCTRL', sprint: 'LSHIFT', attack: 'MOUSE1', aim: 'MOUSE2', item1: '1', item2: '2', item3: '3', map: 'M', inventory: 'TAB' }
 const BUILTIN_PROFILES = [
-  { id: 'builtin-wasd', name: 'WASD 标准', builtin: true, movementMode: 'keyboard', bindings: { ...WASD_BASE } },
-  { id: 'builtin-esdf', name: 'ESDF 键盘移动', builtin: true, movementMode: 'keyboard',
-    bindings: { move_forward: 'E', move_back: 'D', move_left: 'S', move_right: 'F', jump: 'SPACE', crouch: 'LCTRL', sprint: 'LSHIFT', interact: 'R', reload: 'T', flashlight: 'G', ability1: 'W', ability2: 'R', ability3: 'T', ability4: 'G', summoner1: 'D', summoner2: 'F', map: 'M', inventory: 'TAB' } },
+  { id: 'builtin-wasd', name: 'WASD 标准 · 射击/探索', builtin: true, movementMode: 'keyboard', bindings: { ...MOVE_W, ...COMMON, interact: 'E', reload: 'R', flashlight: 'F' } },
+  { id: 'builtin-wasd-skill', name: 'WASD 标准 · 技能/动作', builtin: true, movementMode: 'keyboard', bindings: { ...MOVE_W, ...COMMON, ability1: 'Q', ability2: 'E', ability3: 'R', ability4: 'F' } },
+  { id: 'builtin-esdf', name: 'ESDF · 射击/探索', builtin: true, movementMode: 'keyboard', bindings: { ...MOVE_E, ...COMMON, interact: 'R', reload: 'T', flashlight: 'G' } },
+  { id: 'builtin-esdf-skill', name: 'ESDF · 技能/动作', builtin: true, movementMode: 'keyboard', bindings: { ...MOVE_E, ...COMMON, ability1: 'W', ability2: 'R', ability3: 'T', ability4: 'G' } },
   { id: 'builtin-lol-wert', name: 'MOBA 点击移动 · WERT', builtin: true, movementMode: 'mouse',
     bindings: { ...MOBA_QWER, ability1: 'W', ability2: 'E', ability3: 'R', ability4: 'T', emote: 'Q', stop: 'S' } },
   { id: 'builtin-moba-qwer', name: 'MOBA 点击移动 · 标准 QWER', builtin: true, movementMode: 'mouse', bindings: { ...MOBA_QWER } },

@@ -29,6 +29,6 @@ export async function v2<T = Record<string, unknown>>(action: string, body: Reco
   return r.json()
 }
 
-export const STATUS_LABEL: Record<string, string> = { 'verified-in-game': '游戏内已验证', written: '已写入待验证', ineffective: '无效' }
+export const STATUS_LABEL: Record<string, string> = { 'verified-in-game': '游戏内已验证', written: '已写入待验证', ineffective: '无效', restored: '已恢复原始配置' }
 export type CatalogActionX = CatalogAction & { fixedMouse?: boolean }
 export const CATEGORY_LABEL = { keyboard: 'WASD 键盘移动类', mouse: '鼠标点击移动类' } as const

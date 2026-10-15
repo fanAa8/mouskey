@@ -229,6 +229,8 @@ const applyOne = async ({ mode = 'esdf', profileId, gameId, confirmUnknown = fal
   if (forceStrategy) info.strategy = forceStrategy
   if (mode === 'esdf') {
     if (info.strategy !== 'config' && info.strategy !== 'ue4-clearArray') return { success: false, message: `该游戏的 ESDF 需走「${info.strategyLabel}」策略：请在「游戏迁移」点开该游戏，在「修改方式」里选择（批量不会自动安装模组/补丁）` }
+    const inst = installedState(raw); const on = Object.keys(inst).filter((k) => inst[k])
+    if (on.length) return { success: false, blocked: true, message: `已安装「${on.map((o) => STRATEGY_LABEL[o]).join('、')}」，批量写配置会双重平移；请在游戏详情里先卸载` }
     result = api().migrateEsdfConfig({ gameId, gameName: raw.name, configPath: raw.configPath, fileName: raw.configFileName, steamAppId: raw.steamAppId })
   } else {
     const profile = getProfile(profileId); if (!profile) return { success: false, message: '未找到个人方案' }
@@ -280,12 +282,12 @@ const listMethods = ({ gameId } = {}) => {
     id, label: STRATEGY_LABEL[id] || id, priority: i + 1,
     kind: INJECTION.has(id) ? 'injection' : PATCH.has(id) ? 'patch' : 'config',
     installed: !!inst[id], status: lastStatus[id] || null,
-    ops: id === 'unity-ggm' ? ['apply', 'uninstall'] : INJECTION.has(id) ? ['install', 'uninstall'] : ['apply'],
+    ops: id === 'unity-ggm' ? ['apply', 'uninstall'] : INJECTION.has(id) ? ['install', 'uninstall'] : id === 'lcu' ? ['apply'] : ['apply', 'restore'],
   }))
   const unsupported = info.requirements.unsupported
   const current = methods.find((m) => m.installed) || methods.find((m) => m.status === 'verified-in-game' || m.status === 'written') || null
   const recommended = unsupported ? null : (current && current.status !== 'ineffective' ? current : methods.find((m) => m.status !== 'ineffective' && m !== current)) || null
-  return { success: true, methods, current: current && current.id, recommended: recommended && recommended.id, unsupported, antiCheat: info.antiCheat }
+  return { success: true, configWritten: configWritten(info), configBackups: configBackups(raw).map((f) => basename(f)), methods, current: current && current.id, recommended: recommended && recommended.id, unsupported, antiCheat: info.antiCheat }
 }
 const uninstallMethod = (raw, id) => {
   if (id === 'ue4-pak') return api().ue4Strategy({ action: 'pak-uninstall', gameId: raw.gameId })
@@ -294,8 +296,39 @@ const uninstallMethod = (raw, id) => {
   if (id === 'bepinex') return api().unityStrategy({ action: 'bepinex-uninstall', installPath: raw.installPath })
   return { success: false, message: '该方式没有卸载操作（配置文件类请用备份恢复）' }
 }
+// ─── double-shift guard: config/Input.ini ESDF writes vs patch/injection methods ───
+const CONFIG_METHODS = new Set(['config', 'ue4-clearArray'])
+const configWritten = (info) => {
+  let on = false
+  for (const h of info.history || []) {
+    const m = String(h.plan).split(' ')[0]
+    if (!CONFIG_METHODS.has(m)) continue
+    if (h.status === 'written' || h.status === 'verified-in-game') on = true
+    if (h.status === 'restored') on = false
+  }
+  return on
+}
+const configBackups = (raw) => {
+  if (!raw.configPath || !raw.configFileName) return []
+  const d = join(raw.configPath, 'keyforge_backups'); if (!existsSync(d)) return []
+  return readdirSync(d).filter((f) => f.startsWith(`${raw.gameId}_${raw.configFileName}.`) && f.endsWith('.bak')).sort().map((f) => join(d, f))
+}
+/** Restore the config file to the OLDEST MousKey backup (= state before the first ESDF write). Current file is backed up first. */
+const restoreConfig = (raw, method) => {
+  const target = raw.configPath && raw.configFileName ? join(raw.configPath, raw.configFileName) : null
+  const baks = configBackups(raw)
+  if (!target || !baks.length) return { success: false, message: '找不到配置文件的 MousKey 备份，无法自动恢复；请手动恢复后再继续' }
+  const orig = baks[0]
+  let safety = null
+  if (existsSync(target)) { safety = join(raw.configPath, 'keyforge_backups', `${raw.gameId}_${raw.configFileName}.${new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14)}.before-restore.bak`); copyFileSync(target, safety) }
+  copyFileSync(orig, target)
+  if (readFileSync(target).compare(readFileSync(orig)) !== 0) return { success: false, message: '恢复后回读校验失败', safety }
+  try { reqs.setStatus(raw.gameId, `${method || 'config'} (restore)`, 'restored') } catch { /* ignore */ }
+  return { success: true, message: `已从备份恢复：${basename(orig)}`, restoredFrom: orig, safety }
+}
+
 /** Run one method on one game. Mutual exclusion: other installed patch/injection methods are uninstalled first. Injection needs confirm. */
-const runMethod = async ({ gameId, method, op = 'apply', confirm = false } = {}) => {
+const runMethod = async ({ gameId, method, op = 'apply', confirm = false, restoreFirst = false } = {}) => {
   const f = findGame(gameId); if (!f) return { success: false, message: '未找到该游戏' }
   const { raw, info } = f
   if (info.requirements.unsupported) return { success: false, blocked: true, message: '反作弊游戏：不支持任何修改方式' }
@@ -303,11 +336,25 @@ const runMethod = async ({ gameId, method, op = 'apply', confirm = false } = {})
   const g = await gate(info)
   if (!g.allowed) return { success: false, blocked: true, message: g.reason }
   if (op === 'uninstall') { const r = uninstallMethod(raw, method); return { ...r, method, op } }
+  if (op === 'restore') { const r = restoreConfig(raw, method); return { ...r, method, op } }
   const inst = installedState(raw)
+  const others = Object.keys(inst).filter((o) => o !== method && inst[o])
+  if ((INJECTION.has(method) || PATCH.has(method)) && configWritten(info)) {
+    const baks = configBackups(raw)
+    if (!restoreFirst) return { success: false, needsRestore: true, backup: baks[0] || null, message: baks.length ? `该游戏的配置文件已写入过 ESDF（${STRATEGY_LABEL.config}/Input.ini）。再装「${STRATEGY_LABEL[method]}」会双重平移。需先从备份恢复原始配置：${basename(baks[0])}` : '该游戏的配置文件已写入过 ESDF，但找不到 MousKey 备份，无法自动恢复——已阻止，避免双重平移' }
+    if (!baks.length) return { success: false, blocked: true, message: '找不到配置备份，已阻止' }
+  }
+  if (CONFIG_METHODS.has(method) && others.length && !confirm) {
+    return { success: false, needsConfirm: true, message: `已安装「${others.map((o) => STRATEGY_LABEL[o]).join('、')}」，会先卸载它们再写配置，避免双重平移` }
+  }
   if ((INJECTION.has(method) || PATCH.has(method)) && !confirm) {
     return { success: false, needsConfirm: true, message: INJECTION.has(method) ? `「${STRATEGY_LABEL[method]}」会向游戏目录注入运行时模组/补丁文件，确认后执行` : `「${STRATEGY_LABEL[method]}」会修改游戏数据文件（有备份），确认后执行` }
   }
   const removed = []
+  if ((INJECTION.has(method) || PATCH.has(method)) && configWritten(info) && restoreFirst) {
+    const rr = restoreConfig(raw, 'config'); if (!rr.success) return { ...rr, method }
+    removed.push('config(已恢复)')
+  }
   for (const other of Object.keys(inst)) {
     if (other === method || !inst[other]) continue
     const r = uninstallMethod(raw, other)
@@ -358,4 +405,4 @@ const dispatch = async (action, body = {}, extra = {}) => {
   }
 }
 
-module.exports = { listMethods, runMethod, methodOrder, migrateProfiles, listBackups, dispatch, selectStrategy, listProfiles, saveProfile, deleteProfile, planProfile, STRATEGY_LABEL }
+module.exports = { configWritten, configBackups, restoreConfig, listMethods, runMethod, methodOrder, migrateProfiles, listBackups, dispatch, selectStrategy, listProfiles, saveProfile, deleteProfile, planProfile, STRATEGY_LABEL }

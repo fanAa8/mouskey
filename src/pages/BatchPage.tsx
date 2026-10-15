@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Play, RefreshCw, Eye, Wand2, ShieldAlert, ChevronDown, ChevronRight } from 'lucide-react'
+import { Select } from '../components/Select'
 import { v2, STATUS_LABEL, CATEGORY_LABEL, type PersonalProfile, type PlanResult, type V2Game } from '../lib/v2api'
 
 type Mode = 'esdf' | 'profile'
@@ -19,22 +20,29 @@ export function BatchPage({ onToast }: { onToast: (m: string) => void }) {
   const [busy, setBusy] = useState(false)
   const [expanded, setExpanded] = useState<string | null>(null)
   type Method = { id: string; label: string; priority: number; kind: 'config' | 'patch' | 'injection'; installed: boolean; status: string | null; ops: string[] }
-  const [methods, setMethods] = useState<Record<string, { methods: Method[]; current: string | null; recommended: string | null; unsupported: boolean }>>({})
+  const [methods, setMethods] = useState<Record<string, { methods: Method[]; current: string | null; recommended: string | null; unsupported: boolean; configWritten?: boolean; configBackups?: string[] }>>({})
   const [justFailed, setJustFailed] = useState<Record<string, string>>({})
   const loadMethods = async (gid: string) => {
-    const r = await v2<{ methods: Method[]; current: string | null; recommended: string | null; unsupported: boolean }>('methods', { gameId: gid })
-    if (r.methods) setMethods((m) => ({ ...m, [gid]: { methods: r.methods, current: r.current, recommended: r.recommended, unsupported: r.unsupported } }))
+    const r = await v2<{ methods: Method[]; current: string | null; recommended: string | null; unsupported: boolean; configWritten: boolean; configBackups: string[] }>('methods', { gameId: gid })
+    if (r.methods) setMethods((m) => ({ ...m, [gid]: { methods: r.methods, current: r.current, recommended: r.recommended, unsupported: r.unsupported, configWritten: r.configWritten, configBackups: r.configBackups } }))
   }
-  const OP_LABEL: Record<string, string> = { apply: '应用', install: '安装', uninstall: '卸载' }
+  const OP_LABEL: Record<string, string> = { apply: '应用', install: '安装', uninstall: '卸载', restore: '从备份恢复' }
   const runMethod = async (gid: string, m: Method, op: string) => {
     const g = games.find((x) => x.gameId === gid)
     if (g?.requirements.unsupported) { onToast('反作弊游戏：不支持'); return }
     const what = `${g?.name} · ${m.label} · ${OP_LABEL[op]}`
     if (!window.confirm(`确认执行：${what}？\n写入前会备份；会先卸载其他已安装的方式，避免双重平移。`)) return
-    let r = await v2<{ needsConfirm?: boolean; removed?: string[]; blocked?: boolean }>('method.run', { gameId: gid, method: m.id, op })
-    if (r.needsConfirm) {
-      if (!window.confirm(`${r.message}\n\n这是注入/补丁类方式，确定继续？`)) { onToast('已取消'); return }
-      r = await v2('method.run', { gameId: gid, method: m.id, op, confirm: true })
+    const body: Record<string, unknown> = { gameId: gid, method: m.id, op }
+    let r = await v2<{ needsConfirm?: boolean; needsRestore?: boolean; removed?: string[]; blocked?: boolean }>('method.run', body)
+    for (let i = 0; i < 3 && (r.needsRestore || r.needsConfirm); i++) {
+      if (r.needsRestore) {
+        if (!window.confirm(`${r.message}\n\n先从备份恢复原始配置（当前文件也会另存备份），再继续？`)) { onToast('已取消，未做任何修改'); return }
+        body.restoreFirst = true
+      } else {
+        if (!window.confirm(`${r.message}\n\n确定继续？`)) { onToast('已取消'); return }
+        body.confirm = true
+      }
+      r = await v2('method.run', body)
     }
     onToast(`${r.success ? '✓' : r.blocked ? '⛔' : '✗'} ${r.message || (r.success ? '完成' : '失败')}${r.removed?.length ? `（已先卸载：${r.removed.join('、')}）` : ''}`)
     void loadMethods(gid); void load()
@@ -115,13 +123,8 @@ export function BatchPage({ onToast }: { onToast: (m: string) => void }) {
             <button className={mode === 'profile' ? 'is-active' : ''} onClick={() => { setMode('profile'); setPlans({}) }}>应用我的个人方案</button>
           </div>
           {mode === 'profile' && (
-            <select className="profile-select" value={profileId} onChange={(e) => { setProfileId(e.target.value); setPlans({}) }}>
-              {(['keyboard', 'mouse'] as const).map((m) => (
-                <optgroup key={m} label={CATEGORY_LABEL[m]}>
-                  {profiles.filter((p) => p.movementMode === m).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                </optgroup>
-              ))}
-            </select>
+            <Select ariaLabel="选择个人方案" value={profileId} onChange={(v) => { setProfileId(v); setPlans({}) }}
+              options={(['keyboard', 'mouse'] as const).flatMap((m) => profiles.filter((p) => p.movementMode === m).map((p) => ({ value: p.id, label: p.name, group: CATEGORY_LABEL[m] })))} />
           )}
         </div>
         <p className="v2-muted">
@@ -187,6 +190,7 @@ export function BatchPage({ onToast }: { onToast: (m: string) => void }) {
                             <button className="command-button pp-btn" onClick={() => void runMethod(g.gameId, rec, rec.ops[0])}><Wand2 size={13} />一键切换（{OP_LABEL[rec.ops[0]]}）</button>
                           </div>
                         )}
+                        {ms.configWritten && <div className="v2-warn">配置文件已写入 ESDF：安装补丁/注入前会要求先从备份恢复（{ms.configBackups?.[0] || '未找到备份，将被阻止'}），避免双重平移</div>}
                         {!ms.unsupported && !rec && <div className="v2-warn">所有方式都已标记无效，暂无可用的下一种方式</div>}
                         {ms.methods.map((m) => (
                           <div key={m.id} className={`v2-method ${m.id === ms.current ? 'is-current' : ''} ${m.id === ms.recommended && m.id !== ms.current ? 'is-recommended' : ''} ${m.status === 'ineffective' ? 'is-ineffective' : ''}`}>

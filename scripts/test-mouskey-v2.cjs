@@ -23,7 +23,7 @@ const esdf = sem.BUILTIN_PROFILES.find((p) => p.id === 'builtin-esdf')
     assert(m.notes.some((n) => /不支持点击移动/.test(n)))
   })
   await t('Battlerite ESDF profile → verified KMInput values', () => {
-    const m = sem.mapProfileToGame(esdf, { gameId: 'unity-504370', name: 'Battlerite' })
+    const m = sem.mapProfileToGame(sem.BUILTIN_PROFILES.find((p) => p.id === 'builtin-esdf-skill'), { gameId: 'unity-504370', name: 'Battlerite' })
     const v = Object.fromEntries(m.mapped.map((x) => [x.native, x.value]))
     assert.strictEqual(v['Move.Y.Pos'], 'k.E'); assert.strictEqual(v['Move.X.Neg'], 'k.S'); assert.strictEqual(v['Move.Y.Neg'], 'k.D'); assert.strictEqual(v['Move.X.Pos'], 'k.F')
     assert.strictEqual(v.Ability4, 'k.W'); assert.strictEqual(v.Ability5, 'k.R'); assert.strictEqual(v.Ability6, 'k.T')
@@ -101,6 +101,23 @@ const esdf = sem.BUILTIN_PROFILES.find((p) => p.id === 'builtin-esdf')
     assert.deepStrictEqual(v2.methodOrder({ gameId: 'x', engineType: 'unity' }), ['unity-ggm', 'bepinex'])
     assert.deepStrictEqual(v2.methodOrder({ gameId: 'x', engineType: 'unity', configPath: 'C:/a', configFileName: 'KeyBindings.json' }), ['config', 'unity-ggm', 'bepinex'])
     assert.deepStrictEqual(v2.methodOrder({ gameId: 'x', engineType: 'source' }), ['config'])
+  })
+  await t('built-in profiles have no internal key conflicts', () => {
+    for (const p of sem.BUILTIN_PROFILES) {
+      const ids = new Set(sem.catalogFor(p.movementMode).map((a) => a.id)); const seen = {}
+      for (const [id, k] of Object.entries(p.bindings)) { if (!k || !ids.has(id)) continue; assert(!seen[k], `${p.id}: ${k} used by ${seen[k]} and ${id}`); seen[k] = id }
+    }
+  })
+  await t('double-shift guard: config write tracked, restore to oldest backup', () => {
+    assert.strictEqual(v2.configWritten({ history: [{ plan: 'config (ESDF)', status: 'written' }] }), true)
+    assert.strictEqual(v2.configWritten({ history: [{ plan: 'config (ESDF)', status: 'written' }, { plan: 'config (restore)', status: 'restored' }] }), false)
+    assert.strictEqual(v2.configWritten({ history: [{ plan: 'ue4ss (ESDF)', status: 'written' }] }), false)
+    const d = path.join(tmpHome, 'cfg'); fs.mkdirSync(path.join(d, 'keyforge_backups'), { recursive: true })
+    fs.writeFileSync(path.join(d, 'Input.ini'), 'ESDF')
+    fs.writeFileSync(path.join(d, 'keyforge_backups', 'g1_Input.ini.20260101_000000.bak'), 'WASD-ORIG')
+    fs.writeFileSync(path.join(d, 'keyforge_backups', 'g1_Input.ini.20260201_000000.bak'), 'LATER')
+    const r = v2.restoreConfig({ gameId: 'g1', configPath: d, configFileName: 'Input.ini' }, 'ue4-clearArray')
+    assert(r.success, r.message); assert.strictEqual(fs.readFileSync(path.join(d, 'Input.ini'), 'utf8'), 'WASD-ORIG'); assert.strictEqual(fs.readFileSync(r.safety, 'utf8'), 'ESDF')
   })
   await t('LoL generic: keeps secondary binds, detects collisions, dry run', async () => {
     let state = { GameEvents: { evtCastSpell1: '[q]', evtLevelSpell1: '[Ctrl][q],[Alt][Button 2]', evtRadialEmoteInstantOpen: '[t]' } }

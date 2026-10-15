@@ -25,7 +25,7 @@ const statusFor = (game) => {
   return { status: best, history: all }
 }
 const setStatus = (gameId, plan, status, note) => {
-  if (!['written', 'verified-in-game', 'ineffective'].includes(status)) throw new Error('bad status')
+  if (!['written', 'verified-in-game', 'ineffective', 'restored'].includes(status)) throw new Error('bad status')
   const s = loadStatus(); (s.games[gameId] ||= []).push({ plan, status, note: note || null, at: new Date().toISOString() }); saveStatus(s)
   return { success: true }
 }

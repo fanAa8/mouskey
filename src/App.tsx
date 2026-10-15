@@ -34,6 +34,7 @@ import {
   Wrench,
   Info,
   UserRound,
+  Moon, Sun,
 } from 'lucide-react'
 import {
   type ActionId,
@@ -263,6 +264,13 @@ function App() {
   const [inputHistory, setInputHistory] = useState<Array<{ key: string; state: string; time: number }>>([])
   const [totalKeyPresses, setTotalKeyPresses] = useState(0)
   const [isEsdfActive, setIsEsdfActive] = useState(true)
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => {
+    const q = new URLSearchParams(window.location.search).get('theme')
+    if (q === 'light' || q === 'dark') return q
+    return localStorage.getItem('mk-theme') === 'light' ? 'light' : 'dark'
+  })
+  useEffect(() => { document.documentElement.dataset.theme = theme; localStorage.setItem('mk-theme', theme) }, [theme])
+  const toggleTheme = () => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))
   const [activePage, setActivePage] = useState<'config' | 'personal' | 'games' | 'sync'>('personal')
 
   // LoL optional read/watch (preserved as optional enhancement, not blocking)
@@ -1468,7 +1476,9 @@ function App() {
             </button>
           </div>
           <div className="header-actions">
-
+            <button className="theme-toggle" onClick={toggleTheme} title="切换深色/浅色主题" aria-label="切换主题">
+              {theme === 'dark' ? <><Moon size={14} /> 深色</> : <><Sun size={14} /> 浅色</>}
+            </button>
           </div>
         </header>
 

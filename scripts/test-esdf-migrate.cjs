@@ -273,5 +273,15 @@ console.log('\n[11] Shift map collisions')
   assert(after.includes('a1 = T') && after.includes('a2 = Y'), 'R→T and T→Y no collision')
 }
 
+// ─── 12. Pak platform hint ───
+console.log('\n[12] Pak platform hint')
+{
+  const u = api.ue4Generic
+  assert(u.pakPlatform(['Locked_Up-WindowsNoEditor.pak']) === 'WindowsNoEditor', 'UE4 pak → WindowsNoEditor')
+  assert(u.pakPlatform(['Game-Windows.pak']) === 'Windows', 'UE5 pak → Windows')
+  const d = u.ue4ConfigDirs('NoSuchProj', join(dir, 'lad'), ['X-WindowsNoEditor.pak'])
+  assert(d.length === 1 && d[0].endsWith('WindowsNoEditor'), 'unlaunched game uses pak platform only')
+}
+
 console.log(`\n===== ${passed} passed, ${failed} failed =====`)
 process.exit(failed > 0 ? 1 : 0)

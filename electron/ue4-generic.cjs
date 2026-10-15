@@ -71,7 +71,7 @@ const localAppData = () => process.env.LOCALAPPDATA
  * Config dirs to write for a project. If exactly one of Windows/WindowsNoEditor
  * exists use it; if neither (or both) exist return both ("write both if unsure").
  */
-const ue4ConfigDirs = (project, root = localAppData()) => {
+const ue4ConfigDirs = (project, root = localAppData(), paks = null) => {
   const base = join(root, project, 'Saved', 'Config')
   const win = join(base, 'Windows')
   const wne = join(base, 'WindowsNoEditor')
@@ -79,7 +79,18 @@ const ue4ConfigDirs = (project, root = localAppData()) => {
   const hn = existsSync(wne)
   if (hw && !hn) return [win]
   if (hn && !hw) return [wne]
+  // Not launched yet: pak file name tells the cooked platform (UE4: -WindowsNoEditor.pak, UE5: -Windows.pak)
+  const plat = pakPlatform(paks)
+  if (!hw && !hn && plat === 'WindowsNoEditor') return [wne]
+  if (!hw && !hn && plat === 'Windows') return [win]
   return [win, wne]
+}
+
+const pakPlatform = (paks) => {
+  if (!paks || !paks.length) return null
+  if (paks.some((f) => /-WindowsNoEditor(_\d+_P)?\.pak$/i.test(f))) return 'WindowsNoEditor'
+  if (paks.some((f) => /-Windows(_\d+_P)?\.pak$/i.test(f))) return 'Windows'
+  return null
 }
 
 /** Pick the best Input.ini among platforms under Saved/Config (most recently modified). */
@@ -101,6 +112,9 @@ const pickInputIni = (savedConfig) => {
 let repakChecked = null
 const findRepak = () => {
   if (repakChecked !== null) return repakChecked
+  // Prefer the project-local copy (tools/repak/repak.exe), then PATH
+  const local = join(__dirname, '..', 'tools', 'repak', process.platform === 'win32' ? 'repak.exe' : 'repak')
+  if (existsSync(local)) { repakChecked = local; return local }
   const r = spawnSync(process.platform === 'win32' ? 'where' : 'which', ['repak'], { encoding: 'utf8', windowsHide: true })
   repakChecked = r.status === 0 ? r.stdout.split(/\r?\n/)[0].trim() : ''
   return repakChecked
@@ -181,6 +195,8 @@ module.exports = {
   shiftUe4Key,
   findUe4ProjectsInInstall,
   ue4ConfigDirs,
+  pakPlatform,
+  findRepak,
   pickInputIni,
   readDefaultInputFromPak,
   TEMPLATE_DEFAULT_INPUT,

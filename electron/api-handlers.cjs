@@ -852,7 +852,7 @@ const detectAllGames = ()=> {
  ue4Install = projects[0]
  if (!ue4InputIni) {
  const sc = join(process.env.LOCALAPPDATA || '', ue4Install.project, 'Saved', 'Config')
- ue4InputIni = ue4g.pickInputIni(sc) || join(ue4g.ue4ConfigDirs(ue4Install.project)[0], 'Input.ini')
+ ue4InputIni = ue4g.pickInputIni(sc) || join(ue4g.ue4ConfigDirs(ue4Install.project, undefined, ue4Install.paks)[0], 'Input.ini')
  }
  }
  } catch { /* ignore */ }
@@ -2973,7 +2973,14 @@ const planUe4Override = (content, resolved) => {
     const sibling = join(savedConfig, /noeditor/i.test(platform) ? 'Windows' : 'WindowsNoEditor', 'Input.ini')
     const siblingDirExists = existsSync(dirname(sibling))
     const selfDirExists = existsSync(dirname(resolved.filePath))
-    if (siblingDirExists === selfDirExists) targets.push(sibling)
+    let platHint = null
+    try {
+      const proj = resolved.ue4 && resolved.ue4.installPath && resolved.ue4.project
+        ? ue4g.findUe4ProjectsInInstall(resolved.ue4.installPath).find((p) => p.project.toLowerCase() === resolved.ue4.project.toLowerCase())
+        : null
+      platHint = proj ? ue4g.pakPlatform(proj.paks) : null
+    } catch { /* ignore */ }
+    if (siblingDirExists === selfDirExists && !(platHint && !siblingDirExists && !selfDirExists)) targets.push(sibling)
   }
   return {
     skipped: false,

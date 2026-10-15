@@ -32,3 +32,5 @@ Thumbs.db
 
 # TypeScript build cache
 *.tsbuildinfo
+
+tools/repak/repak.exe

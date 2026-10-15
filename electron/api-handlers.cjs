@@ -3713,7 +3713,7 @@ module.exports = {
       case 'ue4ss-install': {
         const d = getUe4Defaults({ installPath, project })
         if (d.source === 'template') return { success: false, message: '读不到 pak 中的 DefaultInput.ini，无法生成 UE4SS 规则' }
-        return ue4s.installUe4ss({ installPath, project, defaultsText: d.text })
+        return ue4s.installUe4ss({ installPath, project, defaultsText: d.text, overrides: req.overrides, enableConsole: !!req.enableConsole })
       }
       case 'ue4ss-uninstall': return ue4s.uninstallUe4ss({ installPath, project })
       case 'set-status': return ue4s.setEffectStatus({ project, status: req.status, plan: req.plan, note: req.note })

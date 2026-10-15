@@ -238,14 +238,22 @@ node scripts/test-esdf-migrate.cjs
 # ESDF 预览/批量测试
 node scripts/test-esdf-batch.cjs
 
+# 写入策略与 v2
+node scripts/test-ue4-strategies.cjs
+node scripts/test-unity-strategies.cjs
+node scripts/test-battlerite.cjs
+node scripts/test-lol-abilities.cjs
+node scripts/test-mouskey-v2.cjs
+
 # 生产构建（包含 tsc -b 和 vite build）
 npm run build
 ```
 
 当前已验证的测试结果：
 
-- `test-esdf-migrate.cjs`：43 项通过
+- `test-esdf-migrate.cjs`：75 项通过
 - `test-esdf-batch.cjs`：9 项通过
+- `test-ue4-strategies.cjs` 11 / `test-unity-strategies.cjs` 4 / `test-battlerite.cjs` 6 / `test-lol-abilities.cjs` 8 / `test-mouskey-v2.cjs` 13 项通过
 - `npm run build`：通过
 
 ## 生产绿色版同步
@@ -256,8 +264,8 @@ npm run build
 $project = "C:\Users\Administrator\Documents\Codex\2026-09-02\1-2-github"
 $final = "$project\release\mouskey-final\resources\app"
 
-Copy-Item "$project\electron\api-handlers.cjs" "$final\electron\api-handlers.cjs" -Force
-Copy-Item "$project\electron\main.cjs" "$final\electron\main.cjs" -Force
+# 所有后端模块（api-handlers、main、ue4/unity/battlerite/lol 策略、v2 调度等）
+Copy-Item "$project\electron\*.cjs" "$final\electron\" -Force
 Remove-Item "$final\dist" -Recurse -Force -ErrorAction SilentlyContinue
 Copy-Item "$project\dist" "$final\dist" -Recurse -Force
 Copy-Item "$project\src\games" "$final\src\games" -Recurse -Force
@@ -370,3 +378,58 @@ MousKey 的首选原则仍然是**只改配置文件**（方案 1：UE4 `Input.i
 
 **红线：** 检测到 EasyAntiCheat / BattlEye / Vanguard / XIGNCODE / GameGuard / ACE 等反作弊的游戏，一律标记为不支持，任何方案都不安装。联网对战游戏同样不应使用方案 2。
 每次写入的结果分三态记录：`written`（已写入）/ `verified-in-game`（用户确认游戏内生效）/ `ineffective`（无效）。
+
+
+## v2 架构：四个页面 + 个人方案自动适配（2026-10-16）
+
+### 页面
+
+1. **按键配置**：原有的键盘/鼠标绑定编辑、预设、生成变更集、ESDF 工作台和 UE4/Unity 策略接口（保持不变）。
+2. **批量迁移**：扫描已安装游戏，每款游戏一张卡片，显示引擎、自动选择的写入策略、生效状态（游戏内已验证 / 已写入待验证 / 无效）和**应用条件**标签，例如：
+   - 英雄联盟：`需要客户端开着、不在对局中修改`、`写入后立即同步到账号（云端）`
+   - 配置文件 / Input.ini / 补丁类：`写入时需关闭游戏`、`修改后需重启游戏生效`
+   - Battlerite：`Steam 云同步副本会一并写入`
+   - 反作弊游戏：`检测到反作弊（…），不支持`（不可勾选）
+   顶部选择迁移方式：**WASD 整体平移 ESDF** 或 **应用我的个人方案**；可预览、写入所选、对每款游戏「启动」，写入成功后提示「修改后需重启游戏生效」并提供「现在启动」。
+3. **个人方案**：按语义定义一套自己的布局（前进/后退/左/右、跳跃、蹲、冲刺、交互、换弹、手电、技能 1–6、召唤师技能、物品 1–6、饰品、地图、背包、表情），两种移动方式：
+   - **键盘移动**（WASD 类，例如 ESDF）
+   - **鼠标点击移动**（MOBA，只改技能，例如英雄联盟 WERT）
+   可保存多个方案（`Documents\Keyforge\presets\personal\*.json`），内置「ESDF 键盘移动」「MOBA 点击移动 · WERT」两个只读模板，可另存为后修改；同键多绑定会标红。
+4. **实时显示**：原有实时按键悬浮窗（不变）。
+
+### 后端模块
+
+| 文件 | 作用 |
+|---|---|
+| `electron/action-semantics.cjs` | 统一动作语义表 `CATALOG`、引擎同义词表（MoveForward/+forward/Vertical+/evtCastSpell1…→规范动作）、各游戏适配器（LoL GameEvents、Battlerite KMInput、Source bind、Unity 轴、UE 动态匹配），`mapProfileToGame` 输出映射/未识别动作/跳过项/冲突 |
+| `electron/game-requirements.cjs` | 应用条件（chips）、写入闸门 `checkWrite`（客户端/对局/游戏进程/反作弊）、启动方式（Steam `steam://rungameid/<appid>`、WeGame/Riot LoL 客户端、exe）、生效状态登记 `Documents\Keyforge\game-status.json`（含已验证种子） |
+| `electron/mouskey-v2.cjs` | `/api/v2/<action>` 调度：`games`、`launch`、`profiles.list/save/delete`、`plan`（只读预览）、`apply`（单游戏写入，先过闸门）、`status.set`；按游戏自动选策略 |
+| `electron/lol-abilities.cjs` | LoL 专用：QWER→WERT、点击移动开关、通用 GameEvents 写入（保留第二绑定、冲突检测）。全部走 LCU：客户端开着且不在对局 → 备份 → PATCH → GET 校验 → 镜像本地文件（带备份和回读校验） |
+
+`electron/main.cjs` 与 `vite.config.ts` 共用同一个 v2 调度器（开发和绿色版行为一致）。
+
+### 策略自动选择
+
+按游戏给出候选顺序，跳过历史上标记为「无效」的策略；检测到反作弊直接不支持：
+
+- 英雄联盟 → `lcu`
+- UE4 → 已装 2B 则 `ue4ss`，已装 2A 则 `ue4-pak`，否则 `ue4-clearArray` → `ue4-pak` → `ue4ss`
+- Unity → 有键位配置文件（如 KMInput.json）用 `config`，否则 `unity-ggm`（globalgamemanagers）→ `bepinex`
+- 其他 → `config`
+
+批量页只会自动执行 `config` / `ue4-clearArray` / `lcu`；补丁 pak、UE4SS、Unity 补丁、BepInEx 等会改游戏目录的策略只显示推荐，仍需在策略面板里单独确认。
+
+### 实现程度
+
+- 已实现：四个页面、游戏总览与应用条件、启动、个人方案增删改、语义映射与预览、ESDF 批量（配置类）、个人方案写入 **英雄联盟**（技能/召唤师/物品/饰品/表情 + 点击移动）和 **Battlerite**（KMInput + Steam 云副本）、与 ESDF 等价的个人方案复用 ESDF 策略。
+- 仅预览（未实现写入）：UE / Unity / Source 的任意自定义个人方案（会显示映射结果和未识别动作）。
+- 旧「按键配置」页的写入按钮仍走原有流程，未接入新的写入闸门。
+
+### 已在游戏内验证（2026-10-16，用户确认）
+
+| 游戏 | 引擎 | 方案 |
+|---|---|---|
+| Locked Up Demo | UE4.22 | 2A 补丁 pak（ESDF）；2B UE4SS（RFDG，当前安装） |
+| SHADOW PUPPET | Unity 2022.3 Mono | 方案 A：globalgamemanagers InputManager → ESDF（E/F 与交互/手电重叠） |
+| Battlerite | 旧 Unity | KMInput.json + Steam 云副本 → ESDF |
+| 英雄联盟（WeGame） | — | LCU：技能 QWER→WERT + 点击移动 |

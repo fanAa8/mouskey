@@ -18,16 +18,40 @@ export function BatchPage({ onToast }: { onToast: (m: string) => void }) {
   const [confirmed, setConfirmed] = useState<Set<string>>(new Set())
   const [busy, setBusy] = useState(false)
   const [expanded, setExpanded] = useState<string | null>(null)
+  type Method = { id: string; label: string; priority: number; kind: 'config' | 'patch' | 'injection'; installed: boolean; status: string | null; ops: string[] }
+  const [methods, setMethods] = useState<Record<string, { methods: Method[]; current: string | null; recommended: string | null; unsupported: boolean }>>({})
+  const [justFailed, setJustFailed] = useState<Record<string, string>>({})
+  const loadMethods = async (gid: string) => {
+    const r = await v2<{ methods: Method[]; current: string | null; recommended: string | null; unsupported: boolean }>('methods', { gameId: gid })
+    if (r.methods) setMethods((m) => ({ ...m, [gid]: { methods: r.methods, current: r.current, recommended: r.recommended, unsupported: r.unsupported } }))
+  }
+  const OP_LABEL: Record<string, string> = { apply: '应用', install: '安装', uninstall: '卸载' }
+  const runMethod = async (gid: string, m: Method, op: string) => {
+    const g = games.find((x) => x.gameId === gid)
+    if (g?.requirements.unsupported) { onToast('反作弊游戏：不支持'); return }
+    const what = `${g?.name} · ${m.label} · ${OP_LABEL[op]}`
+    if (!window.confirm(`确认执行：${what}？\n写入前会备份；会先卸载其他已安装的方式，避免双重平移。`)) return
+    let r = await v2<{ needsConfirm?: boolean; removed?: string[]; blocked?: boolean }>('method.run', { gameId: gid, method: m.id, op })
+    if (r.needsConfirm) {
+      if (!window.confirm(`${r.message}\n\n这是注入/补丁类方式，确定继续？`)) { onToast('已取消'); return }
+      r = await v2('method.run', { gameId: gid, method: m.id, op, confirm: true })
+    }
+    onToast(`${r.success ? '✓' : r.blocked ? '⛔' : '✗'} ${r.message || (r.success ? '完成' : '失败')}${r.removed?.length ? `（已先卸载：${r.removed.join('、')}）` : ''}`)
+    void loadMethods(gid); void load()
+  }
+  const markMethod = async (gid: string, m: Method, status: 'ineffective' | 'verified-in-game') => {
+    const r = await v2('status.set', { gameId: gid, plan: m.id, status })
+    if (!r.success) { onToast(r.message || '标记失败'); return }
+    if (status === 'ineffective') setJustFailed((j) => ({ ...j, [gid]: m.label }))
+    onToast(`已标记「${m.label}」为${STATUS_LABEL[status]}`); void loadMethods(gid); void load()
+  }
   const [backups, setBackups] = useState<Record<string, Array<{ path: string; dir: boolean }>>>({})
   const expand = async (gid: string) => {
     if (expanded === gid) { setExpanded(null); return }
     setExpanded(gid)
+    void loadMethods(gid)
     const r = await v2<{ files: Array<{ path: string; dir: boolean }> }>('backups', { gameId: gid })
     setBackups((b) => ({ ...b, [gid]: r.files || [] }))
-  }
-  const mark = async (gid: string, status: string) => {
-    const r = await v2('status.set', { gameId: gid, plan: games.find((g) => g.gameId === gid)?.strategy || 'manual', status })
-    onToast(r.success ? `已标记为「${STATUS_LABEL[status]}」` : (r.message || '标记失败')); if (r.success) void load()
   }
   const previewOne = async (gid: string) => {
     const r = await v2<{ results: PlanResult[] }>('plan', { mode, profileId, gameIds: [gid] })
@@ -102,7 +126,7 @@ export function BatchPage({ onToast }: { onToast: (m: string) => void }) {
         </div>
         <p className="v2-muted">
           {mode === 'esdf'
-            ? '把每款游戏里 WASD 一侧的字母键整体右移一列（Q→W、W→E…），复用已验证的配置/Input.ini/LCU 策略。补丁 pak、UE4SS、Unity 补丁等高级策略不会批量自动执行，点开游戏可查看策略详情。'
+            ? '把每款游戏里 WASD 一侧的字母键整体右移一列（Q→W、W→E…），复用已验证的配置/Input.ini/LCU 策略。补丁 pak、UE4SS、Unity 补丁等高级策略不会批量自动执行，点开游戏可按优先级逐个安装/卸载，标记无效后自动推荐下一种。'
             : profile?.movementMode === 'mouse'
               ? '点击移动方案：英雄联盟切到点击移动并改技能键；其他游戏只应用技能类动作。'
               : '键盘方案：按语义把你的动作映射到每款游戏的原生动作；未识别的动作需要勾选确认。'}
@@ -152,11 +176,42 @@ export function BatchPage({ onToast }: { onToast: (m: string) => void }) {
                     <dt>历史</dt><dd>{g.history.length ? g.history.slice(-6).map((h, i) => <div key={i}>{h.at?.slice(0, 16).replace('T', ' ')} {h.plan} · {STATUS_LABEL[h.status] ?? h.status}</div>) : '无记录'}</dd>
                     <dt>备份</dt><dd className="v2-mono">{(backups[g.gameId] || []).length ? backups[g.gameId].slice(0, 10).map((f) => <div key={f.path}>{f.path}{f.dir ? '\\' : ''}</div>) : '无'}</dd>
                   </dl>
+                  {methods[g.gameId] && (() => {
+                    const ms = methods[g.gameId]; const rec = ms.methods.find((m) => m.id === ms.recommended)
+                    return (
+                      <div className="v2-methods">
+                        <span className="eyebrow">修改方式（按优先级）</span>
+                        {ms.unsupported && <div className="v2-chip v2-chip-block"><ShieldAlert size={12} />检测到反作弊：所有方式均禁用</div>}
+                        {!ms.unsupported && justFailed[g.gameId] && rec && rec.id !== ms.current && (
+                          <div className="v2-recommend">「{justFailed[g.gameId]}」无效 → 推荐下一种：<b>{rec.label}</b>
+                            <button className="command-button pp-btn" onClick={() => void runMethod(g.gameId, rec, rec.ops[0])}><Wand2 size={13} />一键切换（{OP_LABEL[rec.ops[0]]}）</button>
+                          </div>
+                        )}
+                        {!ms.unsupported && !rec && <div className="v2-warn">所有方式都已标记无效，暂无可用的下一种方式</div>}
+                        {ms.methods.map((m) => (
+                          <div key={m.id} className={`v2-method ${m.id === ms.current ? 'is-current' : ''} ${m.id === ms.recommended && m.id !== ms.current ? 'is-recommended' : ''} ${m.status === 'ineffective' ? 'is-ineffective' : ''}`}>
+                            <span className="v2-method-idx">{m.priority}</span>
+                            <span className="v2-method-name">{m.label}
+                              <span className="v2-tag">{m.kind === 'injection' ? '注入' : m.kind === 'patch' ? '补丁' : '配置'}</span>
+                              {m.installed && <span className="v2-tag v2-status-written">已安装</span>}
+                              {m.status && <span className={`v2-tag v2-status-${m.status}`}>{STATUS_LABEL[m.status] ?? m.status}</span>}
+                              {m.id === ms.recommended && m.id !== ms.current && <span className="v2-tag v2-status-verified-in-game">推荐</span>}
+                            </span>
+                            <span className="v2-method-actions">
+                              {m.ops.filter((op) => op !== 'uninstall' || m.installed).map((op) => (
+                                <button key={op} className={`subtle-button v2-btn ${op === 'uninstall' ? 'v2-danger' : ''}`} disabled={ms.unsupported} onClick={() => void runMethod(g.gameId, m, op)}>{OP_LABEL[op]}</button>
+                              ))}
+                              <button className="subtle-button v2-btn" disabled={ms.unsupported} onClick={() => void markMethod(g.gameId, m, 'verified-in-game')}>有效</button>
+                              <button className="subtle-button v2-btn v2-danger" disabled={ms.unsupported} onClick={() => void markMethod(g.gameId, m, 'ineffective')}>无效</button>
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  })()}
                   <div className="v2-toolbar">
                     <button className="subtle-button v2-btn" onClick={() => void previewOne(g.gameId)}><Eye size={13} />预览本游戏</button>
                     <button className="subtle-button v2-btn" onClick={() => launch(g.gameId)} disabled={g.launch.type === 'none'}><Play size={13} />启动游戏</button>
-                    <button className="subtle-button v2-btn" onClick={() => void mark(g.gameId, 'verified-in-game')}>标记游戏内已验证</button>
-                    <button className="subtle-button v2-btn" onClick={() => void mark(g.gameId, 'ineffective')}>标记无效</button>
                   </div>
                 </div>
               )}

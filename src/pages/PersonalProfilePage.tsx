@@ -21,6 +21,8 @@ export function PersonalProfilePage({ onToast, pressedKeys, pressedButtons }: { 
   const [draft, setDraft] = useState<PersonalProfile | null>(null)
   const [selected, setSelected] = useState<string>('')
   const [capturing, setCapturing] = useState<string | null>(null)
+  const [wide, setWide] = useState(() => window.innerWidth >= 1360)
+  useEffect(() => { const f = () => setWide(window.innerWidth >= 1360); window.addEventListener('resize', f); return () => window.removeEventListener('resize', f) }, [])
 
   const refresh = async (selectId?: string, m: Mode = mode) => {
     const r = await v2<{ profiles: PersonalProfile[]; catalog: CatalogActionX[]; mouseCatalog: CatalogActionX[] }>('profiles.list')
@@ -90,63 +92,72 @@ export function PersonalProfilePage({ onToast, pressedKeys, pressedButtons }: { 
   const list = profiles.filter((p) => p.movementMode === mode)
 
   return (
-    <section className="v2-page">
-      <div className="v2-cat-tabs">
-        {(['keyboard', 'mouse'] as Mode[]).map((m) => (
-          <button key={m} className={`v2-cat-tab ${mode === m ? 'is-active' : ''}`} onClick={() => switchMode(m)}>
-            {m === 'mouse' ? <Mouse size={15} /> : <Keyboard size={15} />} {CATEGORY_LABEL[m]} <span className="v2-muted">({profiles.filter((p) => p.movementMode === m).length})</span>
-          </button>
-        ))}
-      </div>
-      <div className="v2-profile-layout">
-        <aside className="v2-profile-list">
-          {list.map((p) => (
-            <button key={p.id} className={`v2-profile-item ${draft?.id === p.id ? 'is-active' : ''}`} onClick={() => { setDraft(JSON.parse(JSON.stringify(p))); setSelected('') }}>
-              <span>{p.name}</span>{p.builtin && <em className="v2-chip info">内置</em>}
+    <section className="pp-page">
+      <div className="pp-topbar">
+        <div className="v2-seg pp-cats">
+          {(['keyboard', 'mouse'] as Mode[]).map((m) => (
+            <button key={m} className={mode === m ? 'is-active' : ''} onClick={() => switchMode(m)}>
+              {m === 'mouse' ? <Mouse size={14} /> : <Keyboard size={14} />} {CATEGORY_LABEL[m]}
+              <span className="pp-count">{profiles.filter((p) => p.movementMode === m).length}</span>
             </button>
           ))}
-          <button className="secondary-button" onClick={newProfile}><Plus size={14} /> 在「{CATEGORY_LABEL[mode]}」新建</button>
-        </aside>
-        {draft ? (
-          <div className="v2-profile-editor">
-            <div className="v2-row">
-              <input className="v2-name" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
-              <span className="v2-chip info">{CATEGORY_LABEL[draft.movementMode]}</span>
-              <button className="primary-button" onClick={save}><Save size={14} /> {draft.builtin ? '另存为我的方案' : '保存'}</button>
-              <button className="secondary-button" onClick={duplicate}><Copy size={14} /> 复制</button>
-              <button className="secondary-button" onClick={remove}><Trash2 size={14} /> 删除</button>
+        </div>
+        <div className="pp-chips">
+          {list.map((p) => (
+            <button key={p.id} className={`pp-chip ${draft?.id === p.id ? 'is-active' : ''}`} onClick={() => { setDraft(JSON.parse(JSON.stringify(p))); setSelected('') }}>
+              {p.name}{p.builtin && <em>内置</em>}
+            </button>
+          ))}
+          <button className="pp-chip pp-chip-add" onClick={newProfile}><Plus size={13} /> 新建</button>
+        </div>
+      </div>
+      {draft ? (
+        <div className="pp-body">
+          <aside className="pp-actions">
+            <div className="pp-actions-head">
+              <span className="eyebrow">动作列表</span>
+              <span className="v2-muted">点击按键框后按键，或选中后点右侧键位</span>
             </div>
-            {draft.note && <p className="v2-muted">{draft.note}</p>}
-            {conflicts.ids.size > 0 && <p className="v2-chip warn">有按键冲突：{[...conflicts.keys].join('、')}（已标红）</p>}
-            <div className="v2-profile-split">
-              <div className="v2-action-list">
-                {Object.entries(groups).map(([g, acts]) => (
-                  <div key={g} className="v2-group">
-                    <h3>{GROUP_LABEL[g] ?? g}</h3>
-                    {acts.map((a) => (
-                      <div key={a.id} className={`v2-bind-row ${conflicts.ids.has(a.id) ? 'is-conflict' : ''} ${selected === a.id ? 'is-selected' : ''}`} onClick={() => setSelected(a.id)}>
-                        <span>{a.label}</span>
-                        {a.fixedMouse ? <span className="v2-key fixed">{v2ToGrid(draft.bindings[a.id] || '')}</span> : (
-                          <button className={`v2-key ${capturing === a.id ? 'is-capturing' : ''}`} onClick={(e) => { e.stopPropagation(); setSelected(a.id); setCapturing(a.id) }}
-                            onKeyDown={(e) => { if (capturing !== a.id) return; e.preventDefault(); const k = normalizeKey(e); setKey(a.id, k); setCapturing(null) }}
-                            onBlur={() => setCapturing(null)}>
-                            {capturing === a.id ? '按下按键…' : (draft.bindings[a.id] || '未绑定')}
-                          </button>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                ))}
-              </div>
-              <div className="v2-visual">
-                <p className="v2-muted">{selected ? `点击键位绑定到「${catalog.find((a) => a.id === selected)?.label}」，右键键位清除` : '选中一个动作后点击键位绑定'}</p>
-                <KeyboardMap full104 bindings={mapBindings} selectedActionId={selected} onAssign={assignFromMap} pressedKeys={pressedKeys} conflictKeys={conflicts.keys} />
-                <MouseMap bindings={mapBindings} selectedActionId={selected} onAssign={assignFromMap} onClearBinding={clearFromMap} pressedButtons={pressedButtons} />
-              </div>
+            <div className="pp-actions-scroll">
+              {Object.entries(groups).map(([g, acts]) => (
+                <div key={g} className="pp-group">
+                  <div className="pp-group-title">{GROUP_LABEL[g] ?? g}</div>
+                  {acts.map((a) => (
+                    <div key={a.id} className={`pp-bind ${conflicts.ids.has(a.id) ? 'is-conflict' : ''} ${selected === a.id ? 'is-selected' : ''}`} onClick={() => setSelected(a.id)}>
+                      <span className="pp-bind-label">{a.label}</span>
+                      {a.fixedMouse ? <span className="pp-keycap is-fixed">{v2ToGrid(draft.bindings[a.id] || '')}</span> : (
+                        <button className={`pp-keycap ${capturing === a.id ? 'is-capturing' : ''} ${draft.bindings[a.id] ? '' : 'is-empty'}`} onClick={(e) => { e.stopPropagation(); setSelected(a.id); setCapturing(a.id) }}
+                          onKeyDown={(e) => { if (capturing !== a.id) return; e.preventDefault(); const k = normalizeKey(e); setKey(a.id, k); setCapturing(null) }}
+                          onBlur={() => setCapturing(null)}>
+                          {capturing === a.id ? '按键…' : (v2ToGrid(draft.bindings[a.id] || '') || '未绑定')}
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </aside>
+          <div className="pp-main">
+            <div className="pp-editor-head">
+              <input className="v2-input pp-name" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
+              <span className="v2-tag">{CATEGORY_LABEL[draft.movementMode]}</span>
+              <span className="v2-spacer" />
+              <button className="command-button pp-btn" onClick={save}><Save size={14} /> {draft.builtin ? '另存为我的方案' : '保存'}</button>
+              <button className="subtle-button v2-btn" onClick={duplicate}><Copy size={13} /> 复制</button>
+              <button className="subtle-button v2-btn v2-danger" onClick={remove} disabled={draft.builtin}><Trash2 size={13} /> 删除</button>
+            </div>
+            <div className="pp-status">
+              {conflicts.ids.size > 0 ? <span className="v2-chip v2-chip-block">按键冲突：{[...conflicts.keys].join('、')}（已标红）</span> : <span className="v2-chip v2-chip-info">无冲突</span>}
+              <span className="v2-muted">{selected ? `点击键位绑定到「${catalog.find((a) => a.id === selected)?.label}」，右键鼠标键清除` : (draft.note || '在左侧选中一个动作，再点击键盘/鼠标上的键位绑定')}</span>
+            </div>
+            <div className="pp-visual">
+              <div className="pp-keyboard"><KeyboardMap full104={wide} bindings={mapBindings} selectedActionId={selected} onAssign={assignFromMap} pressedKeys={pressedKeys} conflictKeys={conflicts.keys} /></div>
+              <div className="pp-mouse"><MouseMap bindings={mapBindings} selectedActionId={selected} onAssign={assignFromMap} onClearBinding={clearFromMap} pressedButtons={pressedButtons} /></div>
             </div>
           </div>
-        ) : <p className="v2-muted">此分类下还没有方案，点击左侧新建。</p>}
-      </div>
+        </div>
+      ) : <div className="v2-card"><p className="v2-muted">此分类下还没有方案，点击「新建」。</p></div>}
     </section>
   )
 }

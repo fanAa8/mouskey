@@ -95,6 +95,13 @@ const esdf = sem.BUILTIN_PROFILES.find((p) => p.id === 'builtin-esdf')
     const moba = all.find((p) => p.id === 'seed-lol-traditional'); assert.strictEqual(moba.movementMode, 'mouse'); assert.strictEqual(moba.bindings.move_click, 'MOUSE2'); assert(!('move_forward' in moba.bindings))
     assert.strictEqual(v2.migrateProfiles({ seeds }).created.length, 0)
   })
+  await t('method order per engine (fallback chain priority)', () => {
+    assert.deepStrictEqual(v2.methodOrder({ gameId: 'lol' }), ['lcu'])
+    assert.deepStrictEqual(v2.methodOrder({ gameId: 'x', engineType: 'ue4' }), ['ue4-clearArray', 'ue4-pak', 'ue4ss'])
+    assert.deepStrictEqual(v2.methodOrder({ gameId: 'x', engineType: 'unity' }), ['unity-ggm', 'bepinex'])
+    assert.deepStrictEqual(v2.methodOrder({ gameId: 'x', engineType: 'unity', configPath: 'C:/a', configFileName: 'KeyBindings.json' }), ['config', 'unity-ggm', 'bepinex'])
+    assert.deepStrictEqual(v2.methodOrder({ gameId: 'x', engineType: 'source' }), ['config'])
+  })
   await t('LoL generic: keeps secondary binds, detects collisions, dry run', async () => {
     let state = { GameEvents: { evtCastSpell1: '[q]', evtLevelSpell1: '[Ctrl][q],[Alt][Button 2]', evtRadialEmoteInstantOpen: '[t]' } }
     const deps = { isGameRunning: () => false, findLcuApi: () => ({ port: 1, token: 'x' }), buildLolCandidates: () => [],

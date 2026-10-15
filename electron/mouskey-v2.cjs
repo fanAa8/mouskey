@@ -219,15 +219,16 @@ const applyBattlerite = (raw, mapping) => {
 }
 
 /** Apply to ONE game (UI loops so each game's gate/requirements are shown). */
-const applyOne = async ({ mode = 'esdf', profileId, gameId, confirmUnknown = false } = {}) => {
+const applyOne = async ({ mode = 'esdf', profileId, gameId, confirmUnknown = false, forceStrategy = null } = {}) => {
   const f = findGame(gameId); if (!f) return { success: false, message: '未找到该游戏' }
   const { raw, info } = f
   if (info.requirements.unsupported) return { success: false, blocked: true, message: info.requirements.chips[0].text }
   const g = await gate(info)
   if (!g.allowed) return { success: false, blocked: true, message: g.reason }
   let result
+  if (forceStrategy) info.strategy = forceStrategy
   if (mode === 'esdf') {
-    if (info.strategy !== 'config' && info.strategy !== 'ue4-clearArray') return { success: false, message: `该游戏的 ESDF 需走「${info.strategyLabel}」策略：请在按键配置页的策略面板操作（不会自动安装模组/补丁）` }
+    if (info.strategy !== 'config' && info.strategy !== 'ue4-clearArray') return { success: false, message: `该游戏的 ESDF 需走「${info.strategyLabel}」策略：请在「游戏迁移」点开该游戏，在「修改方式」里选择（批量不会自动安装模组/补丁）` }
     result = api().migrateEsdfConfig({ gameId, gameName: raw.name, configPath: raw.configPath, fileName: raw.configFileName, steamAppId: raw.steamAppId })
   } else {
     const profile = getProfile(profileId); if (!profile) return { success: false, message: '未找到个人方案' }
@@ -244,6 +245,84 @@ const applyOne = async ({ mode = 'esdf', profileId, gameId, confirmUnknown = fal
   }
   if (result && result.success && !result.skipped) { try { reqs.setStatus(gameId, `${info.strategy} (${mode === 'esdf' ? 'ESDF' : profileId})`, 'written') } catch { /* ignore */ } }
   return { ...result, afterWrite: g.afterWrite, launch: info.launch }
+}
+
+// ─── per-game methods (priority order) + fallback chain ───
+const INJECTION = new Set(['ue4-pak', 'ue4ss', 'bepinex'])
+const PATCH = new Set(['unity-ggm'])
+const methodOrder = (raw) => {
+  if (raw.gameId === 'lol') return ['lcu']
+  if (raw.engineType === 'ue4') return ['ue4-clearArray', 'ue4-pak', 'ue4ss']
+  if (raw.engineType === 'unity') {
+    const kb = raw.configPath && /\.(json|ini|cfg)$/i.test(raw.configFileName || '') && /input|key|bind|control/i.test(raw.configFileName || '')
+    return kb ? ['config', 'unity-ggm', 'bepinex'] : ['unity-ggm', 'bepinex']
+  }
+  return ['config']
+}
+const installedState = (raw) => {
+  const out = {}
+  try { if (raw.engineType === 'ue4' && raw.ue4Project) { const g = (ue4s().getStrategyState().games || {})[raw.ue4Project] || {}; out['ue4-pak'] = !!g.plan2a; out.ue4ss = !!g.plan2b } } catch { /* ignore */ }
+  try {
+    if (raw.engineType === 'unity' && raw.installPath) {
+      const u = unitys().detectUnityGame(raw.installPath); const g = (u && (unitys().getUnityState().games || {})[u.product]) || {}
+      out['unity-ggm'] = !!g.planA; out.bepinex = !!g.planB
+    }
+  } catch { /* ignore */ }
+  return out
+}
+const listMethods = ({ gameId } = {}) => {
+  const f = findGame(gameId); if (!f) return { success: false, message: '未找到该游戏' }
+  const { raw, info } = f
+  const inst = installedState(raw)
+  const lastStatus = {}
+  for (const h of info.history || []) lastStatus[String(h.plan).split(' ')[0]] = h.status
+  const methods = methodOrder(raw).map((id, i) => ({
+    id, label: STRATEGY_LABEL[id] || id, priority: i + 1,
+    kind: INJECTION.has(id) ? 'injection' : PATCH.has(id) ? 'patch' : 'config',
+    installed: !!inst[id], status: lastStatus[id] || null,
+    ops: id === 'unity-ggm' ? ['apply', 'uninstall'] : INJECTION.has(id) ? ['install', 'uninstall'] : ['apply'],
+  }))
+  const unsupported = info.requirements.unsupported
+  const current = methods.find((m) => m.installed) || methods.find((m) => m.status === 'verified-in-game' || m.status === 'written') || null
+  const recommended = unsupported ? null : (current && current.status !== 'ineffective' ? current : methods.find((m) => m.status !== 'ineffective' && m !== current)) || null
+  return { success: true, methods, current: current && current.id, recommended: recommended && recommended.id, unsupported, antiCheat: info.antiCheat }
+}
+const uninstallMethod = (raw, id) => {
+  if (id === 'ue4-pak') return api().ue4Strategy({ action: 'pak-uninstall', gameId: raw.gameId })
+  if (id === 'ue4ss') return api().ue4Strategy({ action: 'ue4ss-uninstall', gameId: raw.gameId })
+  if (id === 'unity-ggm') return api().unityStrategy({ action: 'im-revert', installPath: raw.installPath })
+  if (id === 'bepinex') return api().unityStrategy({ action: 'bepinex-uninstall', installPath: raw.installPath })
+  return { success: false, message: '该方式没有卸载操作（配置文件类请用备份恢复）' }
+}
+/** Run one method on one game. Mutual exclusion: other installed patch/injection methods are uninstalled first. Injection needs confirm. */
+const runMethod = async ({ gameId, method, op = 'apply', confirm = false } = {}) => {
+  const f = findGame(gameId); if (!f) return { success: false, message: '未找到该游戏' }
+  const { raw, info } = f
+  if (info.requirements.unsupported) return { success: false, blocked: true, message: '反作弊游戏：不支持任何修改方式' }
+  const order = methodOrder(raw); if (!order.includes(method)) return { success: false, message: `该游戏不适用方式 ${method}` }
+  const g = await gate(info)
+  if (!g.allowed) return { success: false, blocked: true, message: g.reason }
+  if (op === 'uninstall') { const r = uninstallMethod(raw, method); return { ...r, method, op } }
+  const inst = installedState(raw)
+  if ((INJECTION.has(method) || PATCH.has(method)) && !confirm) {
+    return { success: false, needsConfirm: true, message: INJECTION.has(method) ? `「${STRATEGY_LABEL[method]}」会向游戏目录注入运行时模组/补丁文件，确认后执行` : `「${STRATEGY_LABEL[method]}」会修改游戏数据文件（有备份），确认后执行` }
+  }
+  const removed = []
+  for (const other of Object.keys(inst)) {
+    if (other === method || !inst[other]) continue
+    const r = uninstallMethod(raw, other)
+    if (!r.success) return { success: false, message: `先卸载「${STRATEGY_LABEL[other]}」失败：${r.message}，已停止，避免双重平移` }
+    removed.push(other)
+  }
+  let r
+  if (method === 'ue4-pak') r = api().ue4Strategy({ action: 'pak-install', gameId })
+  else if (method === 'ue4ss') r = api().ue4Strategy({ action: 'ue4ss-install', gameId })
+  else if (method === 'unity-ggm') r = api().unityStrategy({ action: 'im-apply', installPath: raw.installPath })
+  else if (method === 'bepinex') r = api().unityStrategy({ action: 'bepinex-install', installPath: raw.installPath })
+  else if (method === 'lcu') return { success: false, message: '英雄联盟请在上方选择「个人方案」（如 LoL WERT / 点击移动）批量写入，通过客户端 API 生效', method }
+  else return { ...(await applyOne({ mode: 'esdf', gameId, forceStrategy: method })), method, removed }
+  if (r && r.success) { try { reqs.setStatus(gameId, `${method} (ESDF)`, 'written') } catch { /* ignore */ } }
+  return { ...r, method, op, removed, afterWrite: g.afterWrite }
 }
 
 /** Read-only: backup files that belong to a game (Documents/Keyforge/backups/* and keyforge_backups next to its config). */
@@ -265,6 +344,8 @@ const dispatch = async (action, body = {}, extra = {}) => {
     case 'catalog': return { success: true, catalog: sem.CATALOG, mouseCatalog: sem.MOUSE_CATALOG, builtin: sem.BUILTIN_PROFILES }
     case 'profiles.migrate': return migrateProfiles(body)
     case 'backups': return listBackups(body)
+    case 'methods': return listMethods(body)
+    case 'method.run': return runMethod(body)
     case 'games': return listGames()
     case 'launch': return launch({ ...body, opener: extra.opener })
     case 'profiles.list': return listProfiles()
@@ -277,4 +358,4 @@ const dispatch = async (action, body = {}, extra = {}) => {
   }
 }
 
-module.exports = { migrateProfiles, listBackups, dispatch, selectStrategy, listProfiles, saveProfile, deleteProfile, planProfile, STRATEGY_LABEL }
+module.exports = { listMethods, runMethod, methodOrder, migrateProfiles, listBackups, dispatch, selectStrategy, listProfiles, saveProfile, deleteProfile, planProfile, STRATEGY_LABEL }

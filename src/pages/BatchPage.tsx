@@ -129,7 +129,7 @@ export function BatchPage({ onToast }: { onToast: (m: string) => void }) {
         </div>
         <p className="v2-muted">
           {mode === 'esdf'
-            ? '固定的 ESDF 方案：移动键 WASD → ESDF（W→E、A→S、S→D、D→F），复用已验证的配置/Input.ini 策略。写入前先检测：已是 ESDF 或已被 MousKey 改过（已写入配置 / 已装补丁或注入）的游戏会显示「已是 ESDF，跳过」，不会二次平移。补丁 pak、UE4SS、Unity 补丁等高级策略不会批量自动执行，点开游戏可逐个安装/卸载。'
+            ? 'ESDF 方案：把 WASD 一侧的字母键整体右移一列（Q→W、W→E、E→R…，A→S、S→D、D→F…），Q/A/Z 空出给你自配；复用已验证的配置/Input.ini 策略。写入前先检测：已是 ESDF 或已被 MousKey 改过（已写入配置 / 已装补丁或注入）的游戏会显示「已是 ESDF，跳过」，不会二次平移。补丁 pak、UE4SS、Unity 补丁等高级策略不会批量自动执行，点开游戏可逐个安装/卸载。'
             : profile?.movementMode === 'mouse'
               ? '点击移动方案：英雄联盟切到点击移动并改技能键；其他游戏只应用技能类动作。'
               : '键盘方案：按语义把你的动作映射到每款游戏的原生动作；未识别的动作需要勾选确认。'}

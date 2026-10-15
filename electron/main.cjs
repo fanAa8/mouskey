@@ -11,6 +11,10 @@ const v2 = require('./mouskey-v2.cjs')
 const PORT = 4174
 const SSE_PORT = 4175
 const DEV_SERVER_URL = `http://127.0.0.1:${PORT}`
+// Per-launch API token: the local HTTP server (127.0.0.1:4175) only accepts POSTs carrying it, so web pages
+// open in a browser cannot drive config writes / patch installs. Passed to the renderer via the page URL (?t=).
+const API_TOKEN = process.env.MOUSKEY_API_TOKEN || require('crypto').randomBytes(24).toString('hex')
+const ALLOWED_ORIGINS = new Set(['null', 'file://', `http://127.0.0.1:${PORT}`, `http://localhost:${PORT}`])
 
 // Check if we're in development mode (vite exists)
 const appDir = path.join(__dirname, '..')
@@ -183,9 +187,10 @@ function createOverlayWindow() {
     // Windows: small overlay toolbar sits better over other windows
     type: process.platform === 'win32' ? 'toolbar' : undefined,
     webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false,
-      enableRemoteModule: true,
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true,
+      preload: path.join(__dirname, 'overlay-preload.cjs'),
     },
   })
 
@@ -336,10 +341,13 @@ function startSseServer() {
   if (sseServer) return
 
   sseServer = http.createServer(async (req, res) => {
-    // CORS headers
-    res.setHeader('Access-Control-Allow-Origin', '*')
+    // CORS: only the app's own pages (file:// → Origin "null", or the dev server). Browsers always send Origin.
+    const origin = req.headers.origin
+    if (origin && !ALLOWED_ORIGINS.has(origin)) { res.writeHead(403); res.end('forbidden origin'); return }
+    if (origin) res.setHeader('Access-Control-Allow-Origin', origin)
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-MousKey-Token')
+    if (req.method === 'POST' && req.headers['x-mouskey-token'] !== API_TOKEN) { res.writeHead(401, { 'Content-Type': 'application/json' }); res.end('{"success":false,"message":"missing/invalid API token"}'); return }
 
     if (req.method === 'OPTIONS') {
       res.writeHead(200)
@@ -678,35 +686,8 @@ function startSseServer() {
       return
     }
 
-    // POST /api/adapters/write
-    if (urlPath === '/api/adapters/write' && req.method === 'POST') {
-      const body = await readBody()
-      try {
-        const result = await api.writeGameConfig(body)
-        jsonOk(result, result.success ? 200 : 400)
-      } catch (err) { jsonOk({ success: false, message: '无效的写入请求。' }, 400) }
-      return
-    }
 
-    // POST /api/adapters/esdf-migrate — one-click WASD→ESDF on the real config file
-    if (urlPath === '/api/adapters/esdf-migrate' && req.method === 'POST') {
-      const body = await readBody()
-      try {
-        const result = api.migrateEsdfConfig(body)
-        jsonOk(result, result.success ? 200 : 400)
-      } catch (err) {
-        jsonOk({ success: false, message: `ESDF 迁移失败：${String(err)}` }, 500)
-      }
-      return
-    }
 
-    // POST /api/adapters/ue4-strategy — plan 2A pak patch / plan 2B UE4SS / scan / effect status
-    if (urlPath === '/api/adapters/ue4-strategy' && req.method === 'POST') {
-      const body = await readBody()
-      try { const r = api.ue4Strategy(body); jsonOk(r, r.success ? 200 : 400) }
-      catch (err) { jsonOk({ success: false, message: String(err) }, 500) }
-      return
-    }
 
     // POST /api/v2/<action> — MousKey v2 (games overview, launch, personal profiles, plan/apply)
     if (urlPath.startsWith('/api/v2/') && req.method === 'POST') {
@@ -716,21 +697,7 @@ function startSseServer() {
       return
     }
 
-    // POST /api/adapters/lol-abilities-wert — LoL QWER→WERT via running client (no match), {dryRun}
-    if (urlPath === '/api/adapters/lol-abilities-wert' && req.method === 'POST') {
-      const body = await readBody()
-      try { const r = await api.lolAbilitiesWert(body); jsonOk(r, r.success ? 200 : 409) }
-      catch (err) { jsonOk({ success: false, message: String(err) }, 500) }
-      return
-    }
 
-    // POST /api/adapters/unity-strategy — plan A InputManager patch / plan B BepInEx remap
-    if (urlPath === '/api/adapters/unity-strategy' && req.method === 'POST') {
-      const body = await readBody()
-      try { const r = api.unityStrategy(body); jsonOk(r, r.success ? 200 : 400) }
-      catch (err) { jsonOk({ success: false, message: String(err) }, 500) }
-      return
-    }
 
     // GET /api/adapters/esdf-candidates — list migratable games after scan
     if (urlPath === '/api/adapters/esdf-candidates' && req.method === 'GET') {
@@ -747,17 +714,6 @@ function startSseServer() {
       return
     }
 
-    // POST /api/adapters/esdf-batch — batch migrate selected games
-    if (urlPath === '/api/adapters/esdf-batch' && req.method === 'POST') {
-      const body = await readBody()
-      try {
-        const result = api.batchMigrateEsdf(body)
-        jsonOk(result, result.success ? 200 : 400)
-      } catch (err) {
-        jsonOk({ success: false, message: `批量迁移失败：${String(err)}` }, 500)
-      }
-      return
-    }
 
     // POST /api/adapters/read
     if (urlPath === '/api/adapters/read' && req.method === 'POST') {
@@ -1036,7 +992,6 @@ function createWindow() {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      enableRemoteModule: false,
     },
     frame: true,
     show: false,
@@ -1045,10 +1000,10 @@ function createWindow() {
   // Load the app
   if (isDev) {
     console.log('[Keyforge] Loading dev server URL:', DEV_SERVER_URL)
-    mainWindow.loadURL(DEV_SERVER_URL)
+    mainWindow.loadURL(`${DEV_SERVER_URL}/?t=${API_TOKEN}`)
   } else {
     console.log('[Keyforge] Loading production file:', distPath)
-    mainWindow.loadFile(distPath)
+    mainWindow.loadFile(distPath, { query: { t: API_TOKEN } })
   }
 
   // Handle page load errors
@@ -1058,7 +1013,7 @@ function createWindow() {
     if (isDev) {
       setTimeout(() => {
         console.log('[Keyforge] Retrying page load...')
-        mainWindow.loadURL(DEV_SERVER_URL)
+        mainWindow.loadURL(`${DEV_SERVER_URL}/?t=${API_TOKEN}`)
       }, 2000)
     }
   })

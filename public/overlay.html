@@ -413,7 +413,7 @@
   <button class="settings-btn" id="closeBtn" title="关闭悬浮窗">×</button>
 
   <script>
-    const { ipcRenderer } = require('electron')
+    const ipcRenderer = window.overlayIpc
     let pressedKeys = new Set()
     let pressedMouse = new Set()
     let currentMode = 'keys-only'

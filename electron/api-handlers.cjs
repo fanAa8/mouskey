@@ -1,4 +1,5 @@
 const {execFileSync} = require('node:child_process');
+const ue4g = require('./ue4-generic.cjs');
 const {existsSync, mkdirSync, readFileSync, readdirSync, copyFileSync, writeFileSync, unlinkSync, watch} = require('node:fs');
 const {basename, dirname, join, normalize, resolve} = require('node:path');
 const https = require('node:https');
@@ -689,15 +690,8 @@ const scanAllUe4Games = ()=> {
  const savedConfig = join(localAppData, d.name, 'Saved', 'Config')
  if (!existsSync(savedConfig)) continue
  try {
- const platforms = readdirSync(savedConfig, { withFileTypes: true })
- for (const p of platforms) {
- if (!p.isDirectory()) continue
- const iniPath = join(savedConfig, p.name, 'Input.ini')
- if (existsSync(iniPath)) {
- result.set(d.name.toLowerCase(), iniPath)
- break
- }
- }
+ const best = ue4g.pickInputIni(savedConfig)
+ if (best) result.set(d.name.toLowerCase(), best)
  } catch { /* ignore */ }
  }
  } catch { /* ignore */ }
@@ -849,7 +843,19 @@ const detectAllGames = ()=> {
 
  // ─── UE4/UE5 auto-detection: look for Saved/Config/*/Input.ini ───
  const installPath = join(steamGame.libraryPath, 'common', steamGame.installDir)
- const ue4InputIni = findUe4InputIni(installPath, steamGame.name, steamGame.appId, ludusaviEntry, ue4Map)
+ let ue4InputIni = findUe4InputIni(installPath, steamGame.name, steamGame.appId, ludusaviEntry, ue4Map)
+ let ue4Install = null
+ // P0: detect UE from install dir (<Project>/Content/Paks) even when Input.ini doesn't exist yet
+ try {
+ const projects = ue4g.findUe4ProjectsInInstall(installPath)
+ if (projects.length) {
+ ue4Install = projects[0]
+ if (!ue4InputIni) {
+ const sc = join(process.env.LOCALAPPDATA || '', ue4Install.project, 'Saved', 'Config')
+ ue4InputIni = ue4g.pickInputIni(sc) || join(ue4g.ue4ConfigDirs(ue4Install.project)[0], 'Input.ini')
+ }
+ }
+ } catch { /* ignore */ }
  if (ue4InputIni) {
  // Record which UE4 directory was matched
  const localAppData = (process.env.LOCALAPPDATA || '').toLowerCase()
@@ -983,6 +989,8 @@ const detectAllGames = ()=> {
  hasLudusaviData,
  ludusavi: ludusaviEntry ?? null,
  steamAppId: steamGame.appId,
+ ue4Project: engineType === 'ue4' ? (ue4Install?.project ?? null) : null,
+ installPath,
  source: 'steam',
  })
  detected++
@@ -2470,11 +2478,9 @@ const deleteLocalPreset = (id)=> {
 // write the same structure back. This covers default WASD → ESDF for any
 // game whose config we can parse, without needing a per-game adapter.
 
-const ESDF_SHIFT_MAP = {
-  q: 'w', w: 'e', e: 'r', r: 't',
-  a: 's', s: 'd', d: 'f', f: 'g',
-  z: 'x', x: 'c', c: 'v', v: 'b',
-}
+// Full-row right shift (see ue4-generic.cjs). Q/A/Z become empty;
+// P/L/M overflow to punctuation, which generic formats skip (reported as warning).
+const ESDF_SHIFT_MAP = ue4g.LETTER_SHIFT
 
 /** Shift a single key token if it is a shiftable letter; otherwise return null. */
 const shiftKeyToken = (raw) => {
@@ -2482,7 +2488,10 @@ const shiftKeyToken = (raw) => {
   const token = String(raw).trim()
   if (!token) return null
   const lower = token.toLowerCase()
-  if (lower in ESDF_SHIFT_MAP) return ESDF_SHIFT_MAP[lower]
+  if (lower in ESDF_SHIFT_MAP) {
+    const t = ESDF_SHIFT_MAP[lower]
+    return /^[a-z]$/.test(t) ? t : null
+  }
   return null
 }
 
@@ -2511,26 +2520,7 @@ const detectMigrationFormat = (fileName, content) => {
  * UE4 key-name table (both directions). Only letter keys need shifting;
  * special keys stay put.
  */
-const UE4_LETTER_ALIASES = {
-  W: 'E', E: 'R', R: 'T', T: 'Y',
-  A: 'S', S: 'D', D: 'F', F: 'G',
-  Z: 'X', X: 'C', C: 'V', V: 'B',
-  Q: 'W',
-}
-
-const shiftUe4KeyName = (keyName) => {
-  if (!keyName) return null
-  const trimmed = String(keyName).trim()
-  // Single letter
-  if (/^[A-Za-z]$/.test(trimmed)) {
-    const shifted = ESDF_SHIFT_MAP[trimmed.toLowerCase()]
-    return shifted ? shifted.toUpperCase() : null
-  }
-  // Exact UE4 names we care about
-  const upper = trimmed
-  if (upper in UE4_LETTER_ALIASES) return UE4_LETTER_ALIASES[upper]
-  return null
-}
+const shiftUe4KeyName = (keyName) => ue4g.shiftUe4Key(keyName)
 
 /** Migrate UE4 Input.ini: rewrite Key= tokens inside Axis/ActionMappings. */
 const migrateUe4InputIni = (content) => {
@@ -2815,11 +2805,13 @@ const resolveConfigTarget = (req) => {
   let configPath = req.configPath || null
   let configFileName = req.fileName || null
   let knowledgeHit = null
+  let foundGame = null
 
   if (!configPath || !configFileName) {
     try {
       const allGames = detectAllGames()
       const found = allGames.games.find((g) => g.gameId === req.gameId)
+      foundGame = found || null
       if (found && found.found && found.configPath) {
         if (!configPath) configPath = found.configPath
         if (!configFileName && found.configFileName) configFileName = found.configFileName
@@ -2853,20 +2845,16 @@ const resolveConfigTarget = (req) => {
   }
 
   const filePath = join(configPath, configFileName)
+  const ue4 = configFileName.toLowerCase() === 'input.ini'
+    ? { project: req.ue4Project || foundGame?.ue4Project || null, installPath: req.installPath || foundGame?.installPath || null }
+    : null
   if (!existsSync(filePath)) {
-    // Try to find a likely config file in the directory
-    try {
-      const entries = readdirSync(configPath)
-      const preferred = entries.find((f) => /input|key|bind|control|setting/i.test(f) && /\.(json|ini|cfg|txt|xml)$/i.test(f))
-      const fallback = entries.find((f) => /\.(json|ini|cfg)$/i.test(f))
-      const pick = preferred || fallback
-      if (pick) {
-        return { success: true, filePath: join(configPath, pick), configPath, configFileName: pick }
-      }
-    } catch { /* ignore */ }
-    return { success: false, message: `配置文件不存在：${filePath}` }
+    // UE: a missing Saved/.../Input.ini is normal (defaults live in the pak) — we create it.
+    if (ue4) return { success: true, filePath, configPath, configFileName, missing: true, ue4 }
+    // No more guessing an arbitrary json/ini/cfg here: that used to hit unrelated settings files.
+    return { success: false, message: `未找到键位配置文件：${filePath}`, status: 'not-found' }
   }
-  return { success: true, filePath, configPath, configFileName }
+  return { success: true, filePath, configPath, configFileName, ue4 }
 }
 
 /**
@@ -2933,6 +2921,80 @@ const detectMovementLayout = (content, format) => {
  * AFTER the ESDF shift for matching native action names found in the file.
  * Set force=true to skip the "already ESDF" safety check.
  */
+
+// ─── P0 helpers: encoding-aware read, UE override planning, verified write ───
+const readConfigText = (filePath, missing) => {
+  if (missing || !existsSync(filePath)) return { text: '', encoding: 'utf8', bom: false, existed: false }
+  const buf = readFileSync(filePath)
+  if (buf.length >= 2 && buf[0] === 0xFF && buf[1] === 0xFE) {
+    return { text: buf.slice(2).toString('utf16le'), encoding: 'utf16le', bom: true, existed: true }
+  }
+  if (buf.length >= 3 && buf[0] === 0xEF && buf[1] === 0xBB && buf[2] === 0xBF) {
+    return { text: buf.slice(3).toString('utf8'), encoding: 'utf8', bom: true, existed: true }
+  }
+  return { text: buf.toString('utf8'), encoding: 'utf8', bom: false, existed: true }
+}
+
+const encodeConfigText = (text, enc) => {
+  if (enc.encoding === 'utf16le') return Buffer.concat([Buffer.from([0xFF, 0xFE]), Buffer.from(text, 'utf16le')])
+  return Buffer.from((enc.bom ? '\uFEFF' : '') + text, 'utf8')
+}
+
+const UE4_OVERRIDE_MARKER = '; MousKey ESDF override'
+
+/** Get default UE input mappings: pak DefaultInput.ini if readable, else template. */
+const getUe4Defaults = (ue4) => {
+  if (ue4 && ue4.installPath && ue4.project) {
+    try {
+      const proj = ue4g.findUe4ProjectsInInstall(ue4.installPath).find((p) => p.project.toLowerCase() === ue4.project.toLowerCase())
+      const fromPak = proj ? ue4g.readDefaultInputFromPak(proj) : null
+      if (fromPak) return { text: fromPak.text, source: fromPak.source }
+    } catch { /* ignore */ }
+  }
+  return { text: ue4g.TEMPLATE_DEFAULT_INPUT, source: 'template' }
+}
+
+/**
+ * UE Input.ini without explicit mappings (empty / defaults in pak): generate
+ * -/+ override entries. Returns null when not applicable.
+ */
+const planUe4Override = (content, resolved) => {
+  if (!resolved.ue4 && (resolved.configFileName || '').toLowerCase() !== 'input.ini') return null
+  if (content.includes(UE4_OVERRIDE_MARKER)) {
+    return { skipped: true, result: { success: true, content, changedCount: 0, changes: [], format: 'ue4-override' } }
+  }
+  const defaults = getUe4Defaults(resolved.ue4)
+  const r = ue4g.buildUe4Override(content, defaults.text)
+  // Targets: the resolved file plus the sibling Windows/WindowsNoEditor dir when unsure
+  const targets = [resolved.filePath]
+  const savedConfig = dirname(dirname(resolved.filePath))
+  const platform = basename(dirname(resolved.filePath))
+  if (/^windows(noeditor)?$/i.test(platform)) {
+    const sibling = join(savedConfig, /noeditor/i.test(platform) ? 'Windows' : 'WindowsNoEditor', 'Input.ini')
+    const siblingDirExists = existsSync(dirname(sibling))
+    const selfDirExists = existsSync(dirname(resolved.filePath))
+    if (siblingDirExists === selfDirExists) targets.push(sibling)
+  }
+  return {
+    skipped: false,
+    defaultsSource: defaults.source,
+    targets,
+    result: { success: true, content: r.content, changedCount: r.changedCount, changes: r.changes, added: r.added, format: 'ue4-override' },
+  }
+}
+
+/** Write, then re-read and verify. For UE overrides, checks every + line is present. */
+const writeAndVerify = (filePath, text, enc, expectLines) => {
+  mkdirSync(dirname(filePath), { recursive: true })
+  writeFileSync(filePath, encodeConfigText(text, enc))
+  const back = readConfigText(filePath, false).text
+  if (expectLines && expectLines.length) {
+    const missingLines = expectLines.filter((l) => l.startsWith('+') && !back.includes(l))
+    return { verified: missingLines.length === 0, missingLines }
+  }
+  return { verified: back === text, missingLines: [] }
+}
+
 const migrateEsdfConfig = (req) => {
   const resolved = resolveConfigTarget(req)
   if (!resolved.success) {
@@ -2941,13 +3003,18 @@ const migrateEsdfConfig = (req) => {
 
   const { filePath, configFileName } = resolved
   let content
+  let enc
   try {
-    content = readFileSync(filePath, 'utf8')
+    enc = readConfigText(filePath, resolved.missing)
+    content = enc.text
   } catch (e) {
     return { success: false, message: `读取配置失败：${e.message}`, gameId: req.gameId, configPath: filePath }
   }
 
-  const format = detectMigrationFormat(configFileName, content)
+  let format = detectMigrationFormat(configFileName, content)
+  if (content.includes(UE4_OVERRIDE_MARKER)) {
+    return { success: true, message: `${configFileName} 已含 MousKey 覆盖条目，跳过以免二次右移。`, gameId: req.gameId, configPath: filePath, format: 'ue4-override', changedCount: 0, changes: [], skipped: true }
+  }
 
   // Safety: if already ESDF, do not double-shift (E→R, S→D, D→F, F→G would break layout)
   if (!req.force) {
@@ -2994,6 +3061,19 @@ const migrateEsdfConfig = (req) => {
     }
   }
 
+  // P0: UE Input.ini with no explicit mappings → generate -/+ overrides
+  let ue4Plan = null
+  if ((format === 'ue4-ini' || format === 'ini') && result.changedCount === 0) {
+    ue4Plan = planUe4Override(content, resolved)
+    if (ue4Plan) {
+      if (ue4Plan.skipped) {
+        return { success: true, message: `${configFileName} 已含 MousKey 覆盖条目，跳过。`, gameId: req.gameId, configPath: filePath, format: 'ue4-override', changedCount: 0, changes: [], skipped: true }
+      }
+      result = ue4Plan.result
+      format = 'ue4-override'
+    }
+  }
+
   // Optional: apply custom action→key overrides on top of the shifted file
   let customApplied = 0
   let nextContent = result.content
@@ -3018,12 +3098,22 @@ const migrateEsdfConfig = (req) => {
     }
   }
 
-  const backupPath = createBackup(filePath, req.gameId || 'esdf')
+  const backupPath = enc.existed ? createBackup(filePath, req.gameId || 'esdf') : null
+  let verification
+  const extraWritten = []
   try {
-    // Preserve BOM if original had one
-    const hasBom = content.charCodeAt(0) === 0xFEFF
-    const writePayload = hasBom ? '\uFEFF' + nextContent : nextContent
-    writeFileSync(filePath, writePayload, 'utf8')
+    verification = writeAndVerify(filePath, nextContent, enc, result.added)
+    // UE: also write the sibling platform dir when we can't tell which one the game uses
+    if (ue4Plan && ue4Plan.targets) {
+      for (const t of ue4Plan.targets.slice(1)) {
+        const tEnc = readConfigText(t, false)
+        if (tEnc.existed) createBackup(t, req.gameId || 'esdf')
+        const tPlan = ue4g.buildUe4Override(tEnc.text, getUe4Defaults(resolved.ue4).text)
+        if (tPlan.changedCount === 0) continue
+        const v = writeAndVerify(t, tPlan.content, tEnc, tPlan.added)
+        extraWritten.push({ path: t, verified: v.verified })
+      }
+    }
   } catch (e) {
     return {
       success: false,
@@ -3039,10 +3129,13 @@ const migrateEsdfConfig = (req) => {
   if (customApplied > 0) parts.push(`自定义覆盖 ${customApplied} 项`)
   return {
     success: true,
-    message: `已对 ${configFileName} 完成 ESDF 迁移（${parts.join('，')}，格式：${format}）。${backupPath ? `原文件备份：${backupPath}。` : ''}请重启游戏后生效。`,
+    message: `已对 ${configFileName} 完成 ESDF 迁移（${parts.join('，')}，格式：${format}）。${backupPath ? `原文件备份：${backupPath}。` : ''}${verification && !verification.verified ? '⚠ 回读校验失败，写入内容可能被拦截。' : '回读校验通过。'}请重启游戏后生效。`,
     gameId: req.gameId,
     configPath: filePath,
     writtenPath: filePath,
+    extraWritten,
+    verified: verification ? verification.verified : false,
+    defaultsSource: ue4Plan?.defaultsSource,
     backupPath,
     format,
     changedCount: result.changedCount + customApplied,
@@ -3071,7 +3164,7 @@ const previewEsdfConfig = (req) => {
   const { filePath, configFileName } = resolved
   let content
   try {
-    content = readFileSync(filePath, 'utf8')
+    content = readConfigText(filePath, resolved.missing).text
   } catch (e) {
     return {
       success: false,
@@ -3084,7 +3177,10 @@ const previewEsdfConfig = (req) => {
     }
   }
 
-  const format = detectMigrationFormat(configFileName, content)
+  let format = detectMigrationFormat(configFileName, content)
+  if (content.includes(UE4_OVERRIDE_MARKER)) {
+    return { success: true, gameId: req.gameId, name: req.gameName || req.gameId, status: 'already-esdf', format: 'ue4-override', configPath: filePath, configFileName, message: '已含 MousKey 覆盖条目', changedCount: 0, changes: [] }
+  }
   const layout = detectMovementLayout(content, format)
 
   if (layout === 'esdf' && !req.force) {
@@ -3109,6 +3205,14 @@ const previewEsdfConfig = (req) => {
     case 'json': result = migrateJsonKeys(content); break
     case 'source-cfg': result = migrateSourceCfg(content); break
     default: result = migrateIniKeys(content); break
+  }
+  let ue4Plan = null
+  if (result && result.success !== false && (format === 'ue4-ini' || format === 'ini') && result.changedCount === 0) {
+    ue4Plan = planUe4Override(content, resolved)
+    if (ue4Plan && !ue4Plan.skipped) { result = ue4Plan.result; format = 'ue4-override' }
+    else if (ue4Plan && ue4Plan.skipped) {
+      return { success: true, gameId: req.gameId, name: req.gameName || req.gameId, status: 'already-esdf', format: 'ue4-override', configPath: filePath, configFileName, message: '已含 MousKey 覆盖条目', changedCount: 0, changes: [] }
+    }
   }
 
   if (!result || result.success === false) {
@@ -3151,9 +3255,13 @@ const previewEsdfConfig = (req) => {
     format,
     configPath: filePath,
     configFileName,
-    message: `可右移 ${result.changedCount} 个键（${format}）`,
+    message: `可右移 ${result.changedCount} 个键（${format}${ue4Plan?.defaultsSource ? `，默认键来源：${ue4Plan.defaultsSource}` : ''}）`,
     changedCount: result.changedCount,
     changes: result.changes.slice(0, 30),
+    missing: !!resolved.missing,
+    targets: ue4Plan?.targets,
+    defaultsSource: ue4Plan?.defaultsSource,
+    added: result.added,
   }
 }
 
@@ -3562,6 +3670,7 @@ module.exports = {
   // ESDF one-click migration
   migrateEsdfConfig,
   previewEsdfConfig,
+  ue4Generic: ue4g,
   listEsdfCandidates,
   batchMigrateEsdf,
   findKeybindFromKnowledge,

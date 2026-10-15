@@ -198,5 +198,80 @@ console.log('\n[6] Custom keys overlay')
   assert(after['Ability1'][0] === 'k.Z', `custom ability1→k.Z got=${after['Ability1'][0]}`)
 }
 
+
+// ─── 7. Empty UE Input.ini (UTF-16 BOM only, like real games) → override entries ───
+console.log('\n[7] Empty UE Input.ini → -/+ overrides')
+{
+  const root = join(dir, 'ue-empty', 'Saved', 'Config')
+  const win = join(root, 'Windows')
+  mkdirSync(win, { recursive: true })
+  const filePath = join(win, 'Input.ini')
+  writeFileSync(filePath, Buffer.from([0xFF, 0xFE]))
+  const pv = api.previewEsdfConfig({ gameId: 'test-ue-empty', configPath: win, fileName: 'Input.ini' })
+  assert(pv.format === 'ue4-override', `preview format=ue4-override got=${pv.format}`)
+  assert(pv.changedCount >= 4, `preview changedCount>=4 got=${pv.changedCount}`)
+  assert(readFileSync(filePath).length === 2, 'preview did not write')
+  const r = api.migrateEsdfConfig({ gameId: 'test-ue-empty', configPath: win, fileName: 'Input.ini' })
+  assert(r.success === true && r.verified === true, `write+verify ok (${r.message})`)
+  const raw = readFileSync(filePath)
+  assert(raw[0] === 0xFF && raw[1] === 0xFE, 'UTF-16 BOM preserved')
+  const text = raw.slice(2).toString('utf16le')
+  assert(text.includes('[/Script/Engine.InputSettings]'), 'section created')
+  assert(text.includes('-AxisMappings=(AxisName="MoveForward",Scale=1.000000,Key=W)'), 'removes W forward')
+  assert(text.includes('+AxisMappings=(AxisName="MoveForward",Scale=1.000000,Key=E)'), 'adds E forward')
+  assert(text.includes('+AxisMappings=(AxisName="MoveRight",Scale=-1.000000,Key=S)'), 'adds S left')
+  const again = api.migrateEsdfConfig({ gameId: 'test-ue-empty', configPath: win, fileName: 'Input.ini' })
+  assert(again.skipped === true, 'second run skipped (no double shift)')
+}
+
+// ─── 8. Missing Input.ini, neither platform dir exists → write Windows + WindowsNoEditor ───
+console.log('\n[8] Missing Input.ini → create both platform dirs')
+{
+  const root = join(dir, 'ue-missing', 'Saved', 'Config')
+  mkdirSync(root, { recursive: true })
+  const win = join(root, 'Windows')
+  const r = api.migrateEsdfConfig({ gameId: 'test-ue-missing', configPath: win, fileName: 'Input.ini', ue4Project: 'Demo' })
+  assert(r.success === true && r.verified === true, `created+verified (${r.message})`)
+  const { existsSync } = require('node:fs')
+  assert(existsSync(join(win, 'Input.ini')), 'Windows/Input.ini created')
+  assert(existsSync(join(root, 'WindowsNoEditor', 'Input.ini')), 'WindowsNoEditor/Input.ini created')
+  assert(r.backupPath == null, 'no backup for new file')
+}
+
+// ─── 9. Existing user content kept when adding overrides ───
+console.log('\n[9] Keep existing Input.ini content')
+{
+  const c = writeCase('ue-keep', 'Input.ini', '[/Script/Engine.InputSettings]\r\nbEnableMouseSmoothing=False\r\n')
+  const r = api.migrateEsdfConfig({ gameId: 'test-ue-keep', configPath: c.caseDir, fileName: 'Input.ini' })
+  const after = readFileSync(c.filePath, 'utf8')
+  assert(r.success && after.includes('bEnableMouseSmoothing=False'), 'existing setting kept')
+  assert(after.split('[/Script/Engine.InputSettings]').length === 2, 'single section header')
+}
+
+// ─── 10. No arbitrary fallback file ───
+console.log('\n[10] No arbitrary fallback file')
+{
+  const c = writeCase('nofallback', 'graphics.ini', 'quality=W\n')
+  const r = api.migrateEsdfConfig({ gameId: 'test-nofb', configPath: c.caseDir, fileName: 'keybinds.json' })
+  assert(r.success === false, `not-found reported (${r.message})`)
+  assert(readFileSync(c.filePath, 'utf8') === 'quality=W\n', 'unrelated file untouched')
+}
+
+// ─── 11. Shift map: no collisions, QAZ empty ───
+console.log('\n[11] Shift map collisions')
+{
+  const m = api.ue4Generic.LETTER_SHIFT
+  const targets = Object.values(m)
+  assert(new Set(targets).size === targets.length, 'targets unique')
+  assert(!targets.includes('q') && !targets.includes('a') && !targets.includes('z'), 'Q/A/Z left empty')
+  assert(api.ue4Generic.shiftUe4Key('T') === 'Y', 'T→Y (was colliding with R→T)')
+  assert(api.ue4Generic.shiftUe4Key('P') === 'LeftBracket', 'P→LeftBracket')
+  assert(api.ue4Generic.shiftUe4Key('SpaceBar') === null, 'SpaceBar not shifted')
+  const c = writeCase('ini-row', 'settings.ini', 'a1 = R\na2 = T\n')
+  api.migrateEsdfConfig({ gameId: 'test-row', configPath: c.caseDir, fileName: 'settings.ini' })
+  const after = readFileSync(c.filePath, 'utf8')
+  assert(after.includes('a1 = T') && after.includes('a2 = Y'), 'R→T and T→Y no collision')
+}
+
 console.log(`\n===== ${passed} passed, ${failed} failed =====`)
 process.exit(failed > 0 ? 1 : 0)

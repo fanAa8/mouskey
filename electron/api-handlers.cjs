@@ -2942,6 +2942,11 @@ const encodeConfigText = (text, enc) => {
 
 const UE4_OVERRIDE_MARKER = '; MousKey ESDF override'
 
+const isPakBackedUe4 = (resolved) => {
+  if (!resolved || !resolved.ue4 || !resolved.ue4.installPath || !resolved.ue4.project) return false
+  return getUe4Defaults(resolved.ue4).source !== 'template'
+}
+
 /** Get default UE input mappings: pak DefaultInput.ini if readable, else template. */
 const getUe4Defaults = (ue4) => {
   if (ue4 && ue4.installPath && ue4.project) {
@@ -3045,7 +3050,13 @@ const migrateEsdfConfig = (req) => {
   }
 
   let result
-  switch (format) {
+  let ue4Plan = null
+  // UE with real pak defaults: always rebuild from defaults (never re-shift the user file's lines)
+  if (isPakBackedUe4(resolved)) {
+    ue4Plan = planUe4Override(content, resolved)
+    if (ue4Plan && !ue4Plan.skipped) { result = ue4Plan.result; format = 'ue4-override' }
+  }
+  if (!result) switch (format) {
     case 'ue4-ini':
       result = migrateUe4InputIni(content)
       break
@@ -3072,8 +3083,7 @@ const migrateEsdfConfig = (req) => {
   }
 
   // P0: UE Input.ini with no explicit mappings → generate -/+ overrides
-  let ue4Plan = null
-  if ((format === 'ue4-ini' || format === 'ini') && result.changedCount === 0) {
+  if (!ue4Plan && (format === 'ue4-ini' || format === 'ini') && result.changedCount === 0) {
     ue4Plan = planUe4Override(content, resolved)
     if (ue4Plan) {
       if (ue4Plan.skipped) {
@@ -3211,14 +3221,18 @@ const previewEsdfConfig = (req) => {
   }
 
   let result
-  switch (format) {
+  let ue4Plan = null
+  if (isPakBackedUe4(resolved)) {
+    ue4Plan = planUe4Override(content, resolved)
+    if (ue4Plan && !ue4Plan.skipped) { result = ue4Plan.result; format = 'ue4-override' }
+  }
+  if (!result) switch (format) {
     case 'ue4-ini': result = migrateUe4InputIni(content); break
     case 'json': result = migrateJsonKeys(content); break
     case 'source-cfg': result = migrateSourceCfg(content); break
     default: result = migrateIniKeys(content); break
   }
-  let ue4Plan = null
-  if (result && result.success !== false && (format === 'ue4-ini' || format === 'ini') && result.changedCount === 0) {
+  if (!ue4Plan && result && result.success !== false && (format === 'ue4-ini' || format === 'ini') && result.changedCount === 0) {
     ue4Plan = planUe4Override(content, resolved)
     if (ue4Plan && !ue4Plan.skipped) { result = ue4Plan.result; format = 'ue4-override' }
     else if (ue4Plan && ue4Plan.skipped) {

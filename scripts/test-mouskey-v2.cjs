@@ -1,3 +1,4 @@
+process.env.MOUSKEY_TARGETS_DIR = require('node:fs').mkdtempSync(require('node:path').join(require('node:os').tmpdir(), 'mk-targets-'))
 // Tests for MousKey v2: semantics/adapters, requirements, strategy selection, profiles CRUD, LoL generic path.
 const assert = require('assert'); const path = require('path'); const fs = require('fs'); const os = require('os')
 const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'mkv2')); process.env.USERPROFILE = tmpHome; process.env.HOME = tmpHome

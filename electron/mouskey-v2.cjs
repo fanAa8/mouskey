@@ -58,9 +58,16 @@ const gameProcessName = (game) => {
   return null
 }
 
+// Online titles protected by kernel/online anti-cheat even when the scan can't see it (no install path / deep layout).
+const KNOWN_ANTICHEAT = /valorant|apex legends|fortnite|pubg|playerunknown|rainbow six|tom clancy's rainbow|rust$|dead by daylight|the finals|delta force|naraka|escape from tarkov|overwatch|call of duty|battlefield|destiny 2|warframe|lost ark|new world|elden ring|dark souls|counter-strike|cs2|dota 2|team fortress|halo infinite|marvel rivals|xdefiant|hunt: showdown|squad$|arma|dayz|world of warcraft|final fantasy xiv|genshin|honkai|zenless|wuthering|永劫|无畏契约|穿越火线|和平精英|逆战|lineage/i
+const KNOWN_AC_EXEMPT = new Set(['lol']) // official client API (LCU), no game files touched
+// Software that ludusavi/Steam scans pick up but are not games.
+const NON_GAME = /^(blender|wallpaper engine|steamworks common redistributables|steamvr|obs studio|spacewar|proton|steam linux runtime|3dmark|pcmark|aseprite|krita|soundpad|source sdk|.*dedicated server|unity hub|unreal engine|rpg maker.*|substance .*|houdini.*|vr ?chat creator.*|fpsviewer|lossless scaling|furmark|occt|aida64|davinci resolve|vegas pro.*|clip studio paint.*|rewasd|keyforge|mouskey)$/i
 const describeGame = (g, cache) => {
   let antiCheat = []
   try { if (g.installPath) antiCheat = ue4s().detectAntiCheat(g.installPath, 3) } catch { /* ignore */ }
+  // known online title: config files stay allowed (plain settings), but patch/injection methods are blocked in runMethod
+  const knownOnline = !KNOWN_AC_EXEMPT.has(g.gameId) && KNOWN_ANTICHEAT.test(String(g.name || ''))
   const status = reqs.statusFor(g)
   const ue4State = g.engineType === 'ue4' && g.ue4Project ? (cache.ue4.games || {})[g.ue4Project] : null
   let unityState = null
@@ -74,14 +81,14 @@ const describeGame = (g, cache) => {
     configPath: g.configPath || null, configFileName: g.configFileName || null, source: g.source || null,
     antiCheat, status: status.status, history: status.history,
     strategy: strat.chosen, strategyLabel: STRATEGY_LABEL[strat.chosen] || '无', strategyCandidates: strat.candidates, skippedIneffective: strat.skippedIneffective || [],
-    requirements, launch: reqs.launchInfo(g), adapter: sem.adapterFor(g).id, gameProcess: gameProcessName(g),
+    knownOnline, requirements, launch: reqs.launchInfo(g), adapter: sem.adapterFor(g).id, gameProcess: gameProcessName(g),
   }
 }
 
 const listGames = () => {
   const all = api().detectAllGames()
   const cache = { ue4: (() => { try { return ue4s().getStrategyState() } catch { return { games: {} } } })(), unity: (() => { try { return unitys().getUnityState() } catch { return { games: {} } } })() }
-  const games = (all.games || []).filter((g) => g.found).map((g) => describeGame(g, cache))
+  const games = (all.games || []).filter((g) => g.found && !NON_GAME.test(String(g.name || '').trim())).map((g) => describeGame(g, cache))
   return { success: true, games }
 }
 const findGame = (gameId) => {
@@ -190,7 +197,7 @@ const planProfile = ({ mode = 'esdf', profileId, gameIds = [] } = {}) => {
     if (info.requirements.unsupported) { out.push({ gameId: gid, name: info.name, ok: false, blocked: true, message: info.requirements.chips[0].text, info }); continue }
     if (mode === 'esdf') {
       const p = info.strategy === 'lcu' ? { success: false, message: '英雄联盟请使用个人方案（点击移动 + 技能键）' } : api().previewEsdfConfig({ gameId: gid, gameName: raw.name, configPath: raw.configPath, fileName: raw.configFileName, steamAppId: raw.steamAppId })
-      const inst = installedState(raw); const already = p.status === 'already-esdf' || configWritten(info) || Object.values(inst).some(Boolean)
+      const already = p.status === 'already-esdf' || !!alreadyModifiedReason(raw, info)
       if (already) { out.push({ gameId: gid, name: info.name, ok: false, mode, strategy: info.strategy, changes: [], status: 'already-esdf', message: '已是 ESDF，跳过', info }); continue }
       out.push({ gameId: gid, name: info.name, ok: !!p.success, mode, strategy: info.strategy, changes: p.changes || [], status: p.status, message: p.message, info })
       continue
@@ -233,9 +240,8 @@ const applyOne = async ({ mode = 'esdf', profileId, gameId, confirmUnknown = fal
   if (mode === 'esdf') {
     if (info.strategy !== 'config' && info.strategy !== 'ue4-clearArray') return { success: false, message: `该游戏的 ESDF 需走「${info.strategyLabel}」策略：请在「游戏迁移」点开该游戏，在「修改方式」里选择（批量不会自动安装模组/补丁）` }
     // Never shift twice: if the game is already ESDF/modified (config written by MousKey, patch/injection installed, or current bindings read as ESDF) skip without writing.
-    const inst = installedState(raw); const on = Object.keys(inst).filter((k) => inst[k])
-    if (on.length) return { success: true, skipped: true, alreadyEsdf: true, message: `已是 ESDF，跳过（已安装「${on.map((o) => STRATEGY_LABEL[o]).join('、')}」）` }
-    if (configWritten(info)) return { success: true, skipped: true, alreadyEsdf: true, message: '已是 ESDF，跳过（MousKey 已写入过该游戏配置）' }
+    const why = alreadyModifiedReason(raw, info)
+    if (why) return { success: true, skipped: true, alreadyEsdf: true, message: `已是 ESDF，跳过（${why}）` }
     const pv = api().previewEsdfConfig({ gameId, gameName: raw.name, configPath: raw.configPath, fileName: raw.configFileName, steamAppId: raw.steamAppId })
     if (pv && pv.status === 'already-esdf') return { success: true, skipped: true, alreadyEsdf: true, message: '已是 ESDF，跳过（当前键位已是 ESDF）' }
     result = api().migrateEsdfConfig({ gameId, gameName: raw.name, configPath: raw.configPath, fileName: raw.configFileName, steamAppId: raw.steamAppId })
@@ -249,8 +255,11 @@ const applyOne = async ({ mode = 'esdf', profileId, gameId, confirmUnknown = fal
       const upd = Object.fromEntries(m.mapped.map((x) => [x.native, x.value]))
       result = await lolAb().applyLolUpdates(api().lolDeps(), upd, { movementMode: m.movementMode })
     } else if (m.adapter === 'battlerite') result = applyBattlerite(raw, m)
-    else if (sem.isEsdfShiftOfWasd(profile) && (info.strategy === 'config' || info.strategy === 'ue4-clearArray')) result = api().migrateEsdfConfig({ gameId, gameName: raw.name, configPath: raw.configPath, fileName: raw.configFileName })
-    else return { success: false, stub: true, message: '该游戏的自定义方案写入尚未实现（已生成预览）' }
+    else if (sem.isEsdfShiftOfWasd(profile) && (info.strategy === 'config' || info.strategy === 'ue4-clearArray')) {
+      const why = alreadyModifiedReason(raw, info)
+      if (why) return { success: true, skipped: true, alreadyEsdf: true, message: `已是 ESDF，跳过（${why}）` }
+      result = api().migrateEsdfConfig({ gameId, gameName: raw.name, configPath: raw.configPath, fileName: raw.configFileName })
+    } else return { success: false, stub: true, message: '该游戏的自定义方案写入尚未实现（已生成预览）' }
   }
   if (result && result.success && !result.skipped) { try { reqs.setStatus(gameId, `${info.strategy} (${mode === 'esdf' ? 'ESDF' : profileId})`, 'written') } catch { /* ignore */ } }
   return { ...result, afterWrite: g.afterWrite, launch: info.launch }
@@ -315,23 +324,50 @@ const configWritten = (info) => {
   }
   return on
 }
+/** Timestamp of a MousKey backup name: "<id>_<file>.YYYYMMDD_HHmmss[-n].bak" (local time). before-restore copies are NOT originals. */
+const backupStamp = (name) => { const m = /\.(\d{8})_?(\d{6})(?:-(\d+))?\.bak$/.exec(name); return m ? `${m[1]}${m[2]}${String(m[3] || 0).padStart(4, '0')}` : null }
+/** Original-candidate backups, oldest first (by parsed timestamp, never by raw string order). */
+const sortOriginalBackups = (names) => names.filter((f) => !f.includes('.before-restore') && backupStamp(f)).sort((a, b) => backupStamp(a).localeCompare(backupStamp(b)))
 const configBackups = (raw) => {
   if (!raw.configPath || !raw.configFileName) return []
   const d = join(raw.configPath, 'keyforge_backups'); if (!existsSync(d)) return []
-  return readdirSync(d).filter((f) => f.startsWith(`${raw.gameId}_${raw.configFileName}.`) && f.endsWith('.bak')).sort().map((f) => join(d, f))
+  return sortOriginalBackups(readdirSync(d).filter((f) => f.startsWith(`${raw.gameId}_${raw.configFileName}.`))).map((f) => join(d, f))
+}
+const localStamp = () => { const d = new Date(); const p = (n) => String(n).padStart(2, '0'); return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}` }
+const readTargets = (gameId) => { try { const f = api().esdfTargetsFile(gameId); return existsSync(f) ? (JSON.parse(readFileSync(f, 'utf8')).files || {}) : {} } catch { return {} } }
+/** Modified by MousKey and not restored since? (status history OR a surviving original backup / target record) */
+const lastConfigEvent = (info) => { let last = null; for (const h of info.history || []) { if (CONFIG_METHODS.has(String(h.plan).split(' ')[0])) last = h.status } return last }
+/** Reason string when an ESDF write would shift a second time; null when safe. */
+const alreadyModifiedReason = (raw, info) => {
+  const inst = installedState(raw); const on = Object.keys(inst).filter((k) => inst[k])
+  if (on.length) return `已安装「${on.map((o) => STRATEGY_LABEL[o]).join('、')}」`
+  if (configWritten(info)) return 'MousKey 已写入过该游戏配置'
+  if (lastConfigEvent(info) !== 'restored' && (Object.keys(readTargets(raw.gameId)).length || configBackups(raw).length)) return '存在 MousKey 写入记录/备份（未恢复）'
+  return null
 }
 /** Restore the config file to the OLDEST MousKey backup (= state before the first ESDF write). Current file is backed up first. */
 const restoreConfig = (raw, method) => {
   const target = raw.configPath && raw.configFileName ? join(raw.configPath, raw.configFileName) : null
   const baks = configBackups(raw)
   if (!target || !baks.length) return { success: false, message: '找不到配置文件的 MousKey 备份，无法自动恢复；请手动恢复后再继续' }
-  const orig = baks[0]
-  let safety = null
-  if (existsSync(target)) { safety = join(raw.configPath, 'keyforge_backups', `${raw.gameId}_${raw.configFileName}.${new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14)}.before-restore.bak`); copyFileSync(target, safety) }
+  const targets = readTargets(raw.gameId)
+  const orig = targets[target] || baks[0]
+  const safetyOf = (file) => { if (!existsSync(file)) return null; const d = join(require('node:path').dirname(file), 'keyforge_backups'); mkdirSync(d, { recursive: true }); const s = join(d, `${raw.gameId}_${basename(file)}.${localStamp()}.before-restore.bak`); copyFileSync(file, s); return s }
+  const safety = safetyOf(target)
   copyFileSync(orig, target)
   if (readFileSync(target).compare(readFileSync(orig)) !== 0) return { success: false, message: '恢复后回读校验失败', safety }
+  // other files touched by the same ESDF write (e.g. UE sibling platform Input.ini)
+  const extra = []
+  for (const [file, bak] of Object.entries(targets)) {
+    if (file === target) continue
+    safetyOf(file)
+    if (bak && existsSync(bak)) { copyFileSync(bak, file); if (readFileSync(file).compare(readFileSync(bak)) !== 0) return { success: false, message: `恢复 ${file} 回读校验失败`, safety } }
+    else if (!bak && existsSync(file)) unlinkSync(file) // created by MousKey
+    extra.push(file)
+  }
+  try { const tf = api().esdfTargetsFile(raw.gameId); if (existsSync(tf)) unlinkSync(tf) } catch { /* ignore */ }
   try { reqs.setStatus(raw.gameId, `${method || 'config'} (restore)`, 'restored') } catch { /* ignore */ }
-  return { success: true, message: `已从备份恢复：${basename(orig)}`, restoredFrom: orig, safety }
+  return { success: true, message: `已从备份恢复：${basename(orig)}${extra.length ? `（另恢复 ${extra.length} 个关联文件）` : ''}`, restoredFrom: orig, safety, extra }
 }
 
 /** Run one method on one game. Mutual exclusion: other installed patch/injection methods are uninstalled first. Injection needs confirm. */
@@ -345,6 +381,9 @@ const runMethod = async ({ gameId, method, op = 'apply', confirm = false, restor
   if (op === 'uninstall') { const r = uninstallMethod(raw, method); return { ...r, method, op } }
   if (op === 'restore') { const r = restoreConfig(raw, method); return { ...r, method, op } }
   const inst = installedState(raw)
+  if ((INJECTION.has(method) || PATCH.has(method)) && inst[method]) return { success: true, skipped: true, method, op, message: `「${STRATEGY_LABEL[method]}」已安装，跳过（不会二次平移）` }
+  if ((INJECTION.has(method) || PATCH.has(method)) && info.knownOnline) return { success: false, blocked: true, method, message: '在线游戏（已知有反作弊）：不允许注入/补丁，只能改配置文件' }
+  if ((INJECTION.has(method) || PATCH.has(method)) && !raw.installPath) return { success: false, blocked: true, method, message: '未找到游戏安装目录，无法检查反作弊，已阻止注入/补丁' }
   const others = Object.keys(inst).filter((o) => o !== method && inst[o])
   if ((INJECTION.has(method) || PATCH.has(method)) && configWritten(info)) {
     const baks = configBackups(raw)
@@ -412,4 +451,4 @@ const dispatch = async (action, body = {}, extra = {}) => {
   }
 }
 
-module.exports = { hasKeyConflict, configWritten, configBackups, restoreConfig, listMethods, runMethod, methodOrder, migrateProfiles, listBackups, dispatch, selectStrategy, listProfiles, saveProfile, deleteProfile, planProfile, STRATEGY_LABEL }
+module.exports = { backupStamp, sortOriginalBackups, alreadyModifiedReason, KNOWN_ANTICHEAT, NON_GAME, hasKeyConflict, configWritten, configBackups, restoreConfig, listMethods, runMethod, methodOrder, migrateProfiles, listBackups, dispatch, selectStrategy, listProfiles, saveProfile, deleteProfile, planProfile, STRATEGY_LABEL }

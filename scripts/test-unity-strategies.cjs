@@ -1,3 +1,4 @@
+process.env.MOUSKEY_TARGETS_DIR = require('node:fs').mkdtempSync(require('node:path').join(require('node:os').tmpdir(), 'mk-targets-'))
 // Synthetic tests for electron/unity-strategies.cjs (no game files touched)
 const assert = require('assert'); const path = require('path')
 const u = require(path.join(__dirname, '..', 'electron', 'unity-strategies.cjs'))

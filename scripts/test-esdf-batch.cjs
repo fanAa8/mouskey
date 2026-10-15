@@ -1,3 +1,4 @@
+process.env.MOUSKEY_TARGETS_DIR = require('node:fs').mkdtempSync(require('node:path').join(require('node:os').tmpdir(), 'mk-targets-'))
 /**
  * Smoke test for ESDF preview + batch migration.
  * Run: node scripts/test-esdf-batch.cjs

@@ -1,3 +1,4 @@
+process.env.MOUSKEY_TARGETS_DIR = require('node:fs').mkdtempSync(require('node:path').join(require('node:os').tmpdir(), 'mk-targets-'))
 /** Tests for electron/ue4-strategies.cjs (no game files needed). Run: node scripts/test-ue4-strategies.cjs */
 const s = require('../electron/ue4-strategies.cjs')
 let passed = 0, failed = 0

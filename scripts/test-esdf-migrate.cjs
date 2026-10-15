@@ -1,3 +1,4 @@
+process.env.MOUSKEY_TARGETS_DIR = require('node:fs').mkdtempSync(require('node:path').join(require('node:os').tmpdir(), 'mk-targets-'))
 /**
  * Smoke test for ESDF migration helpers in electron/api-handlers.cjs
  * Run: node scripts/test-esdf-migrate.cjs

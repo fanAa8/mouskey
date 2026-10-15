@@ -1,3 +1,4 @@
+process.env.MOUSKEY_TARGETS_DIR = require('node:fs').mkdtempSync(require('node:path').join(require('node:os').tmpdir(), 'mk-targets-'))
 const assert=require('assert');const path=require('path');const fs=require('fs');const os=require('os')
 const br=require(path.join(__dirname,'..','electron','battlerite.cjs'))
 let pass=0,fail=0;const t=(n,f)=>{try{f();pass++;console.log('ok',n)}catch(e){fail++;console.log('FAIL',n,e.message)}}

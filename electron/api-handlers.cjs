@@ -361,18 +361,33 @@ const timestamp = () => {
  return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`
 }
 
-/** Create a timestamped backup of a file. Returns backup path or null on failure. */
+/** Create a timestamped backup of a file. Returns backup path, or null when the file does not exist yet.
+ *  THROWS when an existing file cannot be backed up — callers must not overwrite it without a backup. */
 const createBackup = (originalPath, gameId)=> {
  if (!existsSync(originalPath)) return null
  const backupDir = join(dirname(originalPath), 'keyforge_backups')
  try {
  if (!existsSync(backupDir)) mkdirSync(backupDir, { recursive: true })
- const backupPath = join(backupDir, `${gameId}_${basename(originalPath)}.${timestamp()}.bak`)
+ let backupPath = join(backupDir, `${gameId}_${basename(originalPath)}.${timestamp()}.bak`)
+ for (let n = 1; existsSync(backupPath); n++) backupPath = join(backupDir, `${gameId}_${basename(originalPath)}.${timestamp()}-${n}.bak`)
  copyFileSync(originalPath, backupPath)
+ if (readFileSync(backupPath).compare(readFileSync(originalPath)) !== 0) throw new Error('备份回读校验失败')
  return backupPath
- } catch {
- return null
+ } catch (e) {
+ throw new Error(`无法备份 ${originalPath}（${e && e.message ? e.message : e}），已停止写入以免丢失原文件`)
  }
+}
+
+/** Remember the ORIGINAL (pre-MousKey) backup of every file an ESDF write touches, so restore can undo all of them.
+ *  Documents/Keyforge/esdf-targets/<gameId>.json = { files: { <path>: <backup> } }; first backup per file wins. */
+const esdfTargetsFile = (gameId) => join(process.env.MOUSKEY_TARGETS_DIR || join(require('node:os').homedir(), 'Documents', 'Keyforge', 'esdf-targets'), `${String(gameId || 'esdf').replace(/[^\w\-]/g, '_')}.json`)
+const recordEsdfTarget = (gameId, filePath, backupPath) => {
+ const f = esdfTargetsFile(gameId)
+ let doc = { files: {} }
+ try { if (existsSync(f)) doc = JSON.parse(readFileSync(f, 'utf8')) } catch { /* rewrite */ }
+ doc.files = doc.files || {}
+ if (!(filePath in doc.files)) doc.files[filePath] = backupPath || null // null = file did not exist before (restore deletes it)
+ mkdirSync(dirname(f), { recursive: true }); writeFileSync(f, JSON.stringify(doc, null, 2))
 }
 
 // ─── Game detection ───────────────────────────────────────────────────────────
@@ -3122,10 +3137,12 @@ const migrateEsdfConfig = (req) => {
     }
   }
 
-  const backupPath = enc.existed ? createBackup(filePath, req.gameId || 'esdf') : null
+  let backupPath
+  try { backupPath = enc.existed ? createBackup(filePath, req.gameId || 'esdf') : null } catch (e) { return { success: false, message: e.message, gameId: req.gameId, configPath: filePath, format } }
   let verification
   const extraWritten = []
   try {
+    recordEsdfTarget(req.gameId, filePath, backupPath)
     verification = writeAndVerify(filePath, nextContent, enc, result.added)
     // Steam Cloud copy (e.g. Battlerite userdata/<id>/504370/remote/KMInput, UTF-16): mirror when it matched
     if (format === 'json') {
@@ -3138,10 +3155,11 @@ const migrateEsdfConfig = (req) => {
     if (ue4Plan && ue4Plan.targets) {
       for (const t of ue4Plan.targets.slice(1)) {
         const tEnc = readConfigText(t, false)
-        if (tEnc.existed) createBackup(t, req.gameId || 'esdf')
         const tDefs = getUe4Defaults(resolved.ue4)
         const tPlan = tDefs.source !== 'template' ? ue4g.buildUe4ReplaceOverride(tEnc.text, tDefs.text) : ue4g.buildUe4Override(tEnc.text, tDefs.text)
         if (tPlan.changedCount === 0) continue
+        const tBak = tEnc.existed ? createBackup(t, req.gameId || 'esdf') : null
+        recordEsdfTarget(req.gameId, t, tBak)
         const v = writeAndVerify(t, tPlan.content, tEnc, tPlan.added)
         extraWritten.push({ path: t, verified: v.verified })
       }
@@ -3692,6 +3710,9 @@ const writeUe4InputIniMerged = (targetPath, configText, gameId) => {
 
 // ─── Exports ────────────────────────────────────────────────────────────────
 module.exports = {
+ createBackup,
+ esdfTargetsFile,
+ recordEsdfTarget,
   // Game detection
   detectGame,
   detectAllGames,

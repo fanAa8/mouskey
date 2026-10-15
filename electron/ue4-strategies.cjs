@@ -353,7 +353,7 @@ end
 -- the keys are W/A/S/D again, so clear Done when a mapping changes and re-apply.
 local function resetAndApply(reason) Done = {}; reapply(reason) end
 
-RegisterHook("/Script/Engine.PlayerController:ClientRestart", function() ExecuteWithDelay(1500, function() resetAndApply("ClientRestart") end) end)
+RegisterHook("/Script/Engine.PlayerController:ClientRestart", function() ExecuteWithDelay(1500, function() reapply("ClientRestart") end) end)
 pcall(function()
   RegisterHook("/Script/Engine.InputSettings:SaveKeyMappings", function() ExecuteWithDelay(200, function() resetAndApply("SaveKeyMappings") end) end)
 end)

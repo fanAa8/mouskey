@@ -3,6 +3,7 @@ const ue4g = require('./ue4-generic.cjs');
 const ue4s = require('./ue4-strategies.cjs');
 const unitys = require('./unity-strategies.cjs');
 const br = require('./battlerite.cjs');
+const lolAb = require('./lol-abilities.cjs');
 const {existsSync, mkdirSync, readFileSync, readdirSync, copyFileSync, writeFileSync, unlinkSync, watch} = require('node:fs');
 const {basename, dirname, join, normalize, resolve} = require('node:path');
 const https = require('node:https');
@@ -1382,6 +1383,7 @@ const writeLolViaLcuApi = async (req)=> {
  // Also update PersistedSettings.json
  if (existsSync(located.persistedSettingsPath)) {
  try {
+ createBackup(located.persistedSettingsPath, `${req.gameId}_persisted`)
  const raw = readFileSync(located.persistedSettingsPath, 'utf8')
  const data = JSON.parse(raw)
  const inputFile = (data.files ?? []).find((f) => f.name === 'Input.ini')
@@ -1535,6 +1537,7 @@ const writeLolPersistedSettings = async (req)=> {
  return { success: false, message: `未找到 PersistedSettings.json（${persistedPath}）。请先启动一次英雄联盟客户端。`, gameId: req.gameId }
  }
  const psResult = writePersistedSettingsJson(persistedPath, targetSectionName, updates)
+ { const back = parsePersistedSettings(persistedPath); const sec = (back && back.sections && back.sections[targetSectionName]) || null; const chk = JSON.parse(readFileSync(persistedPath, 'utf8')).files.find((f) => f.name === 'Input.ini').sections.find((x) => x.name === targetSectionName).settings; const bad = Object.entries(updates).filter(([k, v]) => !chk.some((x) => x.name === k && x.value === v)); if (bad.length) return { success: false, gameId: req.gameId, message: `PersistedSettings.json 回读校验失败：${bad.map(([k]) => k).join(', ')}。备份：${persistedBackup}`, backupPath: persistedBackup } ; void sec }
 
  // ── 步骤3：写入 input.ini（次目标，尽力而为）──
  let inputUpdated = false
@@ -1555,12 +1558,8 @@ const writeLolPersistedSettings = async (req)=> {
  const gameRunning = isGameRunning()
  let restartNote = ''
  if (gameRunning && !lcuSynced) {
- // WASD 模式或传统模式 LCU 失败时，自动重启游戏
- const restartResult = await restartGameToApplyConfig()
- restartNote = ` ${restartResult.message}`
- if (!restartResult.success) {
- restartNote += ' 配置已写入本地文件，手动重启游戏后即生效。'
- }
+ // No automatic quit-match / practice-tool restart any more (too destructive).
+ restartNote = ' 游戏运行中：配置已写入本地文件，请自行结束对局后重新进入生效。'
  } else if (gameRunning && lcuSynced) {
  restartNote = ' 游戏运行中，LCU API 已实时生效，无需重启。'
  } else {
@@ -1683,6 +1682,7 @@ const writeGameConfig = async (req)=> {
  // LoL is primarily written through the running client's LCU API so the
  // account/cloud settings are updated even when no local input file exists.
  if (req.gameId === 'lol') {
+ if (isGameRunning()) return { success: false, gameId: req.gameId, message: '英雄联盟对局进行中，已阻止写入（MousKey 不会退出对局）。请结束对局后再写入。' }
  const lcuResult = await writeLolViaLcuApi(req)
  if (lcuResult?.success) return lcuResult
  const localResult = await writeLolPersistedSettings(req)
@@ -3709,6 +3709,7 @@ module.exports = {
   ue4Generic: ue4g,
   ue4Strategies: ue4s,
   /** POST /api/adapters/ue4-strategy { action, gameId?, installPath?, project?, status?, plan? } */
+  lolAbilitiesWert: (req = {}) => lolAb.applyLolAbilitiesWert({ findLcuApi, lcuRequest, isGameRunning, buildLolCandidates }, { dryRun: !!req.dryRun }),
   unityStrategy: (req = {}) => {
     const { action, installPath } = req
     if (!installPath) return { success: false, message: 'installPath required' }

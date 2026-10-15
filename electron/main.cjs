@@ -707,6 +707,14 @@ function startSseServer() {
       return
     }
 
+    // POST /api/adapters/lol-abilities-wert — LoL QWER→WERT via running client (no match), {dryRun}
+    if (urlPath === '/api/adapters/lol-abilities-wert' && req.method === 'POST') {
+      const body = await readBody()
+      try { const r = await api.lolAbilitiesWert(body); jsonOk(r, r.success ? 200 : 409) }
+      catch (err) { jsonOk({ success: false, message: String(err) }, 500) }
+      return
+    }
+
     // POST /api/adapters/unity-strategy — plan A InputManager patch / plan B BepInEx remap
     if (urlPath === '/api/adapters/unity-strategy' && req.method === 'POST') {
       const body = await readBody()

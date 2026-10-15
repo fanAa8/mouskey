@@ -11,37 +11,37 @@
     "preview": "vite preview",
     "electron:dev": "electron .",
     "electron:build": "npm run build && electron-builder",
-    "electron:build:win": "npm run build && electron-builder --win"
+    "electron:build:win": "npm run build && electron-builder --win",
+    "test": "for %f in (scripts\\test-*.cjs) do @node %f || exit /b 1",
+    "sync-release": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sync-release.ps1"
   },
   "dependencies": {
-    "@vitejs/plugin-react": "latest",
+    "@vitejs/plugin-react": "^6.1.1",
     "koffi": "^3.2.0",
-    "lucide-react": "latest",
-    "node-global-key-listener": "^0.3.0",
-    "react": "latest",
-    "react-dom": "latest",
-    "uiohook-napi": "^1.5.5",
-    "vite": "latest"
+    "lucide-react": "^1.39.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "vite": "^8.2.2"
   },
   "devDependencies": {
-    "@eslint/js": "latest",
-    "@types/node": "latest",
-    "@types/react": "latest",
-    "@types/react-dom": "latest",
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^26.4.1",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.5",
     "electron": "^44.1.1",
     "electron-builder": "^26.15.3",
-    "eslint": "latest",
-    "eslint-plugin-react-hooks": "latest",
-    "eslint-plugin-react-refresh": "latest",
+    "eslint": "^10.9.1",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.5",
     "express": "^5.2.1",
-    "globals": "latest",
+    "globals": "^17.12.0",
     "js-yaml": "^5.4.1",
-    "typescript": "latest",
-    "typescript-eslint": "latest"
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.69.0"
   },
   "build": {
-    "appId": "com.keyforge.app",
-    "productName": "Keyforge",
+    "appId": "com.mouskey.app",
+    "productName": "MousKey",
     "directories": {
       "output": "release"
     },
@@ -52,7 +52,8 @@
       "vite.config.ts",
       "tsconfig.json",
       "package.json",
-      "node_modules/**/*"
+      "node_modules/**/*",
+      "tools/**/*"
     ],
     "win": {
       "target": [

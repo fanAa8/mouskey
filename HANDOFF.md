@@ -215,17 +215,21 @@ npm run build
 
 ### 同步到精简版并重启
 ```powershell
-$project = "C:\Users\Administrator\Documents\Codex\2026-09-02\1-2-github"
-$final = "$project\release\mouskey-final\resources\app"
-Copy-Item "$project\electron\api-handlers.cjs" "$final\electron\api-handlers.cjs" -Force
-Copy-Item "$project\electron\main.cjs" "$final\electron\main.cjs" -Force
-Remove-Item "$final\dist" -Recurse -Force -ErrorAction SilentlyContinue
-Copy-Item "$project\dist" "$final\dist" -Recurse -Force
-Copy-Item "$project\src\games" "$final\src\games" -Recurse -Force
-Get-Process -Name "mouskey" -ErrorAction SilentlyContinue | Stop-Process -Force
-Start-Sleep -Seconds 3
-Start-Process -FilePath "$final\..\..\mouskey.exe"
+npm run build
+npm run sync-release   # = scripts/sync-release.ps1
 ```
+`scripts/sync-release.ps1` 复制 electron/*.cjs、dist、src/games、src/data、public（图标、overlay.html）、tools（repak/ue4ss/unity，补丁/注入方式需要），然后重启 release\mouskey-final\mouskey.exe。不复制 package.json（其 name 决定 userData 目录）。
+
+### 测试
+```powershell
+npm test        # scripts/test-*.cjs（含 test-double-shift.cjs：恢复排序、多文件恢复、双重平移守卫）
+npx tsc -b; npm run lint
+```
+
+### 本地 API 安全
+- 127.0.0.1:4175 只接受来自应用自身页面的 Origin（file:// / dev 4174），POST 需要每次启动随机生成的 X-MousKey-Token（通过页面 URL ?t= 传给前端，src/main.tsx 自动附加）。
+- 调试时可用环境变量 MOUSKEY_API_TOKEN 固定 token。
+- 旧的无守卫写入路由（/api/adapters/write、esdf-migrate、esdf-batch、ue4-strategy、unity-strategy、lol-abilities-wert）已从 main.cjs 移除；所有写入走 /api/v2（反作弊 + 双重平移守卫）。
 
 ### 注意事项
 - **只改源码版本**，精简版从源码同步，不要直接改精简版

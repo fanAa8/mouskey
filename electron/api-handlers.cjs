@@ -1,5 +1,6 @@
 const {execFileSync} = require('node:child_process');
 const ue4g = require('./ue4-generic.cjs');
+const ue4s = require('./ue4-strategies.cjs');
 const {existsSync, mkdirSync, readFileSync, readdirSync, copyFileSync, writeFileSync, unlinkSync, watch} = require('node:fs');
 const {basename, dirname, join, normalize, resolve} = require('node:path');
 const https = require('node:https');
@@ -3696,6 +3697,30 @@ module.exports = {
   migrateEsdfConfig,
   previewEsdfConfig,
   ue4Generic: ue4g,
+  ue4Strategies: ue4s,
+  /** POST /api/adapters/ue4-strategy { action, gameId?, installPath?, project?, status?, plan? } */
+  ue4Strategy: (req = {}) => {
+    let installPath = req.installPath, project = req.project
+    if ((!installPath || !project) && req.gameId) {
+      const g = detectAllGames().games.find((x) => x.gameId === req.gameId)
+      if (g) { installPath = installPath || g.installPath; project = project || g.ue4Project }
+    }
+    switch (req.action) {
+      case 'scan': return { success: true, ...ue4s.scanUe4Game({ installPath, project }) }
+      case 'pak-build': return ue4s.buildPakPatch({ installPath, project, install: false, aesKey: req.aesKey })
+      case 'pak-install': return ue4s.buildPakPatch({ installPath, project, install: true, aesKey: req.aesKey })
+      case 'pak-uninstall': return ue4s.uninstallPakPatch({ installPath, project })
+      case 'ue4ss-install': {
+        const d = getUe4Defaults({ installPath, project })
+        if (d.source === 'template') return { success: false, message: '读不到 pak 中的 DefaultInput.ini，无法生成 UE4SS 规则' }
+        return ue4s.installUe4ss({ installPath, project, defaultsText: d.text })
+      }
+      case 'ue4ss-uninstall': return ue4s.uninstallUe4ss({ installPath, project })
+      case 'set-status': return ue4s.setEffectStatus({ project, status: req.status, plan: req.plan, note: req.note })
+      case 'state': return { success: true, ...ue4s.getStrategyState() }
+      default: return { success: false, message: `未知 action：${req.action}` }
+    }
+  },
   listEsdfCandidates,
   batchMigrateEsdf,
   findKeybindFromKnowledge,

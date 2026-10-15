@@ -359,3 +359,14 @@ Steam Cloud、游戏客户端、服务器同步或游戏运行时保存可能覆
 项目代码按仓库现有许可证执行。键盘素材使用项目中已有的 CC0 资源；游戏路径资料来自 Ludusavi/PCGamingWiki 等公开资料时，应保留来源说明并遵守各自许可证。
 
 GitHub 仓库：<https://github.com/fanAa8/mouskey>
+
+## 键位写入策略（2026-10 更新）
+
+MousKey 的首选原则仍然是**只改配置文件**（方案 1：UE4 `Input.ini` 用 `!AxisMappings=ClearArray` + 全量右移列表重建）。
+但部分 UE 游戏在运行时用自带的 DataTable / 键位菜单重建按键（检测标签：**运行时自管键位，配置写入无效**），配置写入对它们无效。经用户同意，对这类游戏提供超出"只改配置"的可选方案：
+
+- **方案 2A：补丁 pak**——在 `Content\Paks` 放入 `<Project>-WindowsNoEditor_MousKey_P.pak`，内含右移后的键位 DataTable 和 `DefaultInput.ini`；不修改原 pak，删除该文件即还原。
+- **方案 2B：UE4SS + Lua 模组**——在游戏 `Binaries\Win64` 安装 UE4SS（官方 v3.0.1）与 `Mods\MousKeyESDF`，运行时把映射改成 ESDF 并 `ForceRebuildKeymaps`；按安装清单逐个删除即还原。
+
+**红线：** 检测到 EasyAntiCheat / BattlEye / Vanguard / XIGNCODE / GameGuard / ACE 等反作弊的游戏，一律标记为不支持，任何方案都不安装。联网对战游戏同样不应使用方案 2。
+每次写入的结果分三态记录：`written`（已写入）/ `verified-in-game`（用户确认游戏内生效）/ `ineffective`（无效）。

@@ -699,6 +699,14 @@ function startSseServer() {
       return
     }
 
+    // POST /api/adapters/ue4-strategy — plan 2A pak patch / plan 2B UE4SS / scan / effect status
+    if (urlPath === '/api/adapters/ue4-strategy' && req.method === 'POST') {
+      const body = await readBody()
+      try { const r = api.ue4Strategy(body); jsonOk(r, r.success ? 200 : 400) }
+      catch (err) { jsonOk({ success: false, message: String(err) }, 500) }
+      return
+    }
+
     // GET /api/adapters/esdf-candidates — list migratable games after scan
     if (urlPath === '/api/adapters/esdf-candidates' && req.method === 'GET') {
       try { jsonOk(api.listEsdfCandidates()) }

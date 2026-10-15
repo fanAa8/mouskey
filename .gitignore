@@ -34,3 +34,5 @@ Thumbs.db
 *.tsbuildinfo
 
 tools/repak/repak.exe
+
+tools/ue4ss/unpacked/

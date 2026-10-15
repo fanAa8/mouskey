@@ -31,6 +31,8 @@ import {
   X,
   AlertTriangle,
   Download,
+  Wrench,
+  Info,
 } from 'lucide-react'
 import {
   type ActionId,
@@ -336,6 +338,9 @@ const getMouseBadge = (button: string): string | null => {
   return null
 }
 
+// API base: dev mode uses vite dev server (relative path), production uses Electron HTTP server on 4175
+const API_BASE = import.meta.env.DEV ? '' : 'http://127.0.0.1:4175'
+
 function App() {
   const [profiles, setProfiles] = useState<Profile[]>(profileSeeds)
   const [activeProfileId, setActiveProfileId] = useState(profileSeeds[0].id)
@@ -346,6 +351,7 @@ function App() {
   const [showNativeText, setShowNativeText] = useState(false)
   const [toast, setToast] = useState('')
   const [isWriting, setIsWriting] = useState(false)
+  const [isMigratingEsdf, setIsMigratingEsdf] = useState(false)
   const [writeResult, setWriteResult] = useState<{ success: boolean; message: string } | null>(null)
 
   // ─── Real-time input monitoring ────────────────────────────────────────────
@@ -391,6 +397,9 @@ function App() {
 
   // LoL optional read/watch (preserved as optional enhancement, not blocking)
   const [lolRead, setLolRead] = useState<LolReadResult | null>(null)
+  // Generic game config read (UE4 Input.ini, etc.)
+  const [gameConfigRead, setGameConfigRead] = useState<{ success: boolean; message: string; bindings?: Record<string, string>; configPath?: string } | null>(null)
+  const [isReadingGameConfig, setIsReadingGameConfig] = useState(false)
   const [isReadingLol, setIsReadingLol] = useState(false)
   const [lolWatch, setLolWatch] = useState<LolWatchResult | null>(null)
   const [isStartingLolWatch, setIsStartingLolWatch] = useState(false)
@@ -404,7 +413,7 @@ function App() {
 
   // ─── Detected games (auto-detect installed games) ───────────────────────
   type LudusaviInfo = { name: string; installDir: string | null; configFiles: string[]; configRegistry: string[] }
-  type DetectedGame = { gameId: string; name: string; genre: string; color: string; found: boolean; configPath: string | null; message: string; hasAdapter: boolean; hasLudusaviData: boolean; ludusavi: LudusaviInfo | null; steamAppId?: string; source: string }
+  type DetectedGame = { gameId: string; name: string; genre: string; color: string; found: boolean; configPath: string | null; configFileName?: string; message: string; hasAdapter: boolean; hasLudusaviData: boolean; ludusavi: LudusaviInfo | null; steamAppId?: string; source: string; autoAdapter?: boolean; engineType?: string }
   const [detectedGames, setDetectedGames] = useState<DetectedGame[]>([])
   const [isDetectingGames, setIsDetectingGames] = useState(false)
   const [hasDetectedGames, setHasDetectedGames] = useState(false)
@@ -412,10 +421,46 @@ function App() {
   const [expandedGameId, setExpandedGameId] = useState<string | null>(null)
   const [isGeneratingAdapter, setIsGeneratingAdapter] = useState(false)
 
+  // ─── Batch ESDF migration workbench ──────────────────────────────────────
+  type EsdfCandidate = {
+    gameId: string
+    name: string
+    genre?: string
+    color?: string
+    engineType?: string | null
+    configPath?: string | null
+    configFileName?: string | null
+    format?: string | null
+    layout?: string | null
+    status: string
+    changedCount: number
+    changes: string[]
+    message: string
+    canMigrate: boolean
+    alreadyEsdf: boolean
+    knowledge?: {
+      esdfSupport?: string | null
+      howTo?: string | null
+      confidence?: string | null
+      source?: string | null
+      paths?: string[]
+    } | null
+  }
+  const [showEsdfWorkbench, setShowEsdfWorkbench] = useState(false)
+  const [esdfCandidates, setEsdfCandidates] = useState<EsdfCandidate[]>([])
+  const [esdfSelected, setEsdfSelected] = useState<Set<string>>(new Set())
+  const [esdfSummary, setEsdfSummary] = useState<string>('')
+  const [isLoadingEsdf, setIsLoadingEsdf] = useState(false)
+  const [isBatchMigrating, setIsBatchMigrating] = useState(false)
+  const [esdfBatchResult, setEsdfBatchResult] = useState<{ message: string; results: Array<{ gameId: string; success: boolean; skipped?: boolean; changedCount: number; message: string; backupPath?: string | null }> } | null>(null)
+  const [expandedEsdfId, setExpandedEsdfId] = useState<string | null>(null)
+
   // Custom (auto-generated) adapters
   const [customAdapters, setCustomAdapters] = useState<GameDefinition[]>([])
-  const allGames = useMemo(() => [...games, ...customAdapters], [customAdapters])
-  const getAnyGame = (id: string): GameDefinition => allGames.find((g) => g.id === id) ?? games[0]
+  // Auto-detected engine-template adapters (UE4, etc.)
+  const [autoAdapterGames, setAutoAdapterGames] = useState<GameDefinition[]>([])
+  const allGames = useMemo(() => [...games.filter((g) => !g.isEngineTemplate), ...customAdapters, ...autoAdapterGames], [customAdapters, autoAdapterGames])
+  const getAnyGame = (id: string): GameDefinition => allGames.find((g) => g.id === id) ?? allGames[0]
 
   // ─── Local presets (universal middle layer: save/load/delete) ───────────
   type LocalPresetSummary = { id: string; name: string; category?: string; note?: string; sourceGame?: string; sourceMode?: string; createdAt: string; updatedAt: string; bindingCount: number; filePath: string }
@@ -438,6 +483,20 @@ function App() {
     ? 'wasd'
     : activeGame.defaultMode
 
+  // Write strategy selection (for games with multiple write strategies)
+  const writeStrategies = activeGame.writeStrategies ?? []
+  const hasMultipleStrategies = writeStrategies.length > 1
+  const [activeStrategyId, setActiveStrategyId] = useState<string>('')
+  // Reset strategy when game changes
+  useEffect(() => {
+    const defaultStrat = activeGame.defaultStrategy ?? (writeStrategies[0]?.id ?? '')
+    setActiveStrategyId(defaultStrat)
+  }, [activeGameId, activeGame.defaultStrategy, writeStrategies])
+  const activeStrategy = writeStrategies.find((s) => s.id === activeStrategyId) ?? writeStrategies[0] ?? null
+  // Use strategy's configFormat/fileName if available, otherwise fall back to game-level
+  const activeConfigFormat = activeStrategy?.configFormat ?? activeGame.configFormat ?? 'ini'
+  const activeConfigFileName = activeStrategy?.configFileName ?? activeGame.configFileName ?? 'config.ini'
+
   // ─── Preset-first patch generation ──────────────────────────────────────
   // This is the core change: patches are ALWAYS generated from the user's
   // own profile, regardless of whether the game's current config can be read.
@@ -446,7 +505,7 @@ function App() {
     [activeGame, activeProfile.bindings, activeModeId],
   )
 
-  const nativeConfigText = useMemo(() => formatNativeConfig(patchSet), [patchSet])
+  const nativeConfigText = useMemo(() => formatNativeConfig(patchSet, activeConfigFormat), [patchSet, activeConfigFormat])
 
   const changedItems = useMemo(
     () => patchSet.patches.filter((p) => p.changed),
@@ -578,6 +637,41 @@ function App() {
     })
     updateProfileBindings(nextBindings)
     setToast(`已清除 ${action.label} 的 ${key} 绑定`)
+  }
+
+  // ─── 整体右移键位（WASD → ESDF 规则）───────────────────────────────────
+  // 使用已有的 esdfMigration 模块，支持各种键名格式（Q/q/KeyQ 等）
+  const shiftBindingsRight = () => {
+    const current = activeProfile.bindings
+    let shiftedCount = 0
+    // First pass: apply shift using the existing esdfMigration module
+    const nextBindings = current.map((binding) => {
+      if (!binding.key) return binding
+      if (shouldShiftKey(binding.key)) {
+        shiftedCount++
+        return { ...binding, key: getShiftTarget(binding.key) }
+      }
+      return binding
+    })
+    if (shiftedCount === 0) {
+      setToast('当前配置中没有可右移的字母键（QAZ 区域）')
+      return
+    }
+    // Resolve conflicts: if two actions end up on the same key, keep first, clear rest
+    const conflicts = detectKeyConflicts(nextBindings)
+    let conflictCount = 0
+    for (const [key, actionIds] of Object.entries(conflicts)) {
+      for (let i = 1; i < actionIds.length; i++) {
+        const idx = nextBindings.findIndex((b) => b.id === actionIds[i])
+        if (idx >= 0) {
+          nextBindings[idx] = { ...nextBindings[idx], key: '' }
+          conflictCount++
+        }
+      }
+    }
+    updateProfileBindings(nextBindings)
+    setIsEsdfActive(true)
+    setToast(`已整体右移 ${shiftedCount} 个字母键（WASD→ESDF），QAZ 已空出${conflictCount > 0 ? `，解决 ${conflictCount} 个冲突` : ''}`)
   }
 
   const applyEsdfToProfile = () => {
@@ -753,7 +847,7 @@ function App() {
   const readLocalLolSettings = async () => {
     setIsReadingLol(true)
     try {
-      const response = await fetch('/api/adapters/lol/read', { cache: 'no-store' })
+      const response = await fetch(API_BASE + '/api/adapters/lol/read', { cache: 'no-store' })
       const result = await response.json() as LolReadResult
       setLolRead(result)
       // Sync read bindings to current profile
@@ -773,8 +867,59 @@ function App() {
     }
   }
 
+  const readGameCurrentConfig = async () => {
+    setIsReadingGameConfig(true)
+    setGameConfigRead(null)
+    try {
+      const response = await fetch(API_BASE + '/api/adapters/read', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          gameId: activeGame.id,
+          configPath: activeGame.configPathLabel || undefined,
+          fileName: activeConfigFileName,
+        }),
+      })
+      const result = await response.json()
+      setGameConfigRead(result)
+      if (result.success && result.bindings && Object.keys(result.bindings).length > 0) {
+        // Apply read bindings to current profile
+        setProfiles((prev) => prev.map((profile) => {
+          if (profile.id !== activeProfileId) return profile
+          const newBindings = profile.bindings.map((binding) => {
+            const readKey = result.bindings[binding.id]
+            if (readKey) {
+              return { ...binding, key: readKey }
+            }
+            return binding
+          })
+          return { ...profile, bindings: newBindings }
+        }))
+        // Update the game definition's nativeNames with the read mapping
+        // This ensures generatePatchSet uses the correct native action names (e.g. Move.Y.Pos instead of Axis_MoveForward)
+        if (result.nativeNames && typeof result.nativeNames === 'object') {
+          setAutoAdapterGames((prev) => prev.map((g) => {
+            if (g.id !== activeGame.id) return g
+            return { ...g, nativeNames: { ...g.nativeNames, ...result.nativeNames } }
+          }))
+        }
+        const count = Object.keys(result.bindings).length
+        setToast(`已读取 ${activeGame.name} 当前键位（${count} 项），已同步到当前配置档`)
+      } else if (result.success) {
+        setToast(result.message || '已读取配置文件，但未解析到键位映射')
+      } else {
+        setToast(`读取失败：${result.message}`)
+      }
+    } catch {
+      setGameConfigRead({ success: false, message: '无法连接配置读取服务。' })
+      setToast('读取游戏配置失败')
+    } finally {
+      setIsReadingGameConfig(false)
+    }
+  }
+
   const refreshLolSaveWatch = useCallback(async () => {
-    const response = await fetch('/api/adapters/lol/watch/status', { cache: 'no-store' })
+    const response = await fetch(API_BASE + '/api/adapters/lol/watch/status', { cache: 'no-store' })
     const result = await response.json() as LolWatchResult
     setLolWatch(result)
     return result
@@ -783,7 +928,7 @@ function App() {
   const startLolSaveWatch = async () => {
     setIsStartingLolWatch(true)
     try {
-      const response = await fetch('/api/adapters/lol/watch/start', { method: 'POST', cache: 'no-store' })
+      const response = await fetch(API_BASE + '/api/adapters/lol/watch/start', { method: 'POST', cache: 'no-store' })
       const result = await response.json() as LolWatchResult
       setLolWatch(result)
       setToast('已开始监测下一次本地保存')
@@ -916,7 +1061,7 @@ function App() {
   const detectAllGames = async () => {
     setIsDetectingGames(true)
     try {
-      const response = await fetch('/api/adapters/detect-all', { cache: 'no-store' })
+      const response = await fetch(API_BASE + '/api/adapters/detect-all', { cache: 'no-store' })
       const result = await response.json()
       if (result.games) {
         setDetectedGames(result.games)
@@ -925,6 +1070,73 @@ function App() {
         const adaptedCount = result.games.filter((g: DetectedGame) => g.hasAdapter && g.found).length
         const steamCount = result.steamGames?.length ?? 0
         setToast(`已检测到 ${result.detected} 个已安装游戏（${adaptedCount} 个已适配 / Steam库 ${steamCount} 个）`)
+
+        // Dynamically generate GameDefinition for all selectable games without dedicated adapters
+        const ue4Template = games.find((g) => g.id === '_engine-ue4')
+        if (ue4Template) {
+          const newAutoGames: GameDefinition[] = []
+          const existingIds = new Set([...games.map((g) => g.id), ...customAdapters.map((g) => g.id), ...autoAdapterGames.map((g) => g.id)])
+          for (const g of result.games) {
+            if (g.hasAdapter && g.found && !existingIds.has(g.gameId)) {
+              const isUe4 = g.engineType === 'ue4'
+              const isUnity = g.engineType === 'unity'
+              const adapterLabel = isUe4
+                ? 'UE4 Input.ini (自动检测)'
+                : isUnity
+                  ? 'Unity 通用配置 (自动检测)'
+                  : '通用配置 (可尝试)'
+              const correctConfigFileName = g.configFileName || (isUe4 ? 'Input.ini' : 'settings.ini')
+              const correctConfigFormat = isUe4 ? 'ue4-ini' : (correctConfigFileName.endsWith('.json') ? 'json' : 'ini')
+              // For non-UE4 games, override writeStrategies configFileName to use the correct file
+              let gameWriteStrategies = undefined
+              if (!isUe4 && ue4Template.writeStrategies) {
+                gameWriteStrategies = ue4Template.writeStrategies.map((s) => ({
+                  ...s,
+                  configFileName: correctConfigFileName,
+                  configFormat: correctConfigFormat,
+                  name: s.name.replace('Input.ini', correctConfigFileName),
+                }))
+              }
+              // Set correct nativeNames for known games (avoid relying on post-read update)
+              let gameNativeNames = { ...ue4Template.nativeNames }
+              if (correctConfigFileName === 'KMInput.json') {
+                // Battlerite native action names (only use valid ActionId keys)
+                gameNativeNames = {
+                  ...ue4Template.nativeNames,
+                  forward: 'Move.Y.Pos',
+                  back: 'Move.Y.Neg',
+                  left: 'Move.X.Neg',
+                  right: 'Move.X.Pos',
+                  ability1: 'Ability1',
+                  ability2: 'Ability2',
+                  ability3: 'Ability3',
+                  ultimate: 'Ability4',
+                  summoner1: 'EX.Modifier',
+                  interact: 'UI.Misc',
+                  jump: 'Jump',
+                  map: 'TopDownCamera.NextTarget',
+                }
+              }
+              newAutoGames.push({
+                ...ue4Template,
+                id: g.gameId,
+                name: g.name,
+                color: g.color,
+                configPathLabel: g.configPath ?? '',
+                adapterLabel,
+                configFormat: correctConfigFormat,
+                configFileName: correctConfigFileName,
+                writeStrategies: gameWriteStrategies,
+                nativeNames: gameNativeNames,
+                canWrite: true,
+                notes: `${isUe4 ? '自动检测为 UE4/UE5 引擎游戏。' : isUnity ? '自动检测为 Unity 引擎游戏。' : '通用配置适配。'}${g.message} 动作名为标准命名，不同游戏可能不同，请在游戏内确认。如写入不生效，请尝试其他方案或在游戏内手动设置。`,
+              } as GameDefinition)
+            }
+          }
+          if (newAutoGames.length > 0) {
+            setAutoAdapterGames((prev) => [...prev, ...newAutoGames])
+          }
+        }
       }
     } catch {
       setToast('检测已安装游戏失败')
@@ -937,7 +1149,7 @@ function App() {
 
   const loadCustomAdapters = async () => {
     try {
-      const response = await fetch('/api/adapters/custom/list', { cache: 'no-store' })
+      const response = await fetch(API_BASE + '/api/adapters/custom/list', { cache: 'no-store' })
       const result = await response.json()
       if (result.success && result.adapters) {
         setCustomAdapters(result.adapters)
@@ -948,7 +1160,7 @@ function App() {
   const generateAdapter = async (steamAppId: string, gameName: string) => {
     setIsGeneratingAdapter(true)
     try {
-      const response = await fetch('/api/adapters/generate', {
+      const response = await fetch(API_BASE + '/api/adapters/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ steamAppId }),
@@ -976,7 +1188,7 @@ function App() {
   const refreshLocalPresets = async () => {
     setIsLoadingPresets(true)
     try {
-      const response = await fetch('/api/presets/list', { cache: 'no-store' })
+      const response = await fetch(API_BASE + '/api/presets/list', { cache: 'no-store' })
       const result = await response.json()
       if (result.presets) {
         setLocalPresets(result.presets)
@@ -1004,7 +1216,7 @@ function App() {
       bindings: bindingsMap,
     }
     try {
-      const response = await fetch('/api/presets/save', {
+      const response = await fetch(API_BASE + '/api/presets/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(preset),
@@ -1054,7 +1266,7 @@ function App() {
 
   const deleteLocalPreset = async (presetId: string, presetName: string) => {
     try {
-      const response = await fetch('/api/presets/delete', {
+      const response = await fetch(API_BASE + '/api/presets/delete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: presetId }),
@@ -1137,6 +1349,156 @@ function App() {
     setToast(`已基于「${activeProfile.name}」生成 ${activeGame.name} 的原生变更集（${patchSet.changedCount} 项变更）`)
   }
 
+  // ─── Batch ESDF workbench ──────────────────────────────────────────────────
+
+  const loadEsdfCandidates = async (autoOpen = false) => {
+    setIsLoadingEsdf(true)
+    setEsdfBatchResult(null)
+    try {
+      const response = await fetch(API_BASE + '/api/adapters/esdf-candidates', { cache: 'no-store' })
+      const result = await response.json()
+      if (!result.success) {
+        setToast(result.message || '扫描 ESDF 候选失败')
+        return
+      }
+      const list: EsdfCandidate[] = result.candidates ?? []
+      setEsdfCandidates(list)
+      setEsdfSummary(result.message ?? '')
+      // Auto-select all migratable
+      const next = new Set(list.filter((c) => c.canMigrate).map((c) => c.gameId))
+      setEsdfSelected(next)
+      if (autoOpen) setShowEsdfWorkbench(true)
+      setToast(result.message || `已分析 ${list.length} 款游戏的配置`)
+    } catch {
+      setToast('无法连接 ESDF 扫描服务')
+    } finally {
+      setIsLoadingEsdf(false)
+    }
+  }
+
+  const toggleEsdfSelect = (gameId: string) => {
+    setEsdfSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(gameId)) next.delete(gameId)
+      else next.add(gameId)
+      return next
+    })
+  }
+
+  const selectAllMigratable = () => {
+    setEsdfSelected(new Set(esdfCandidates.filter((c) => c.canMigrate).map((c) => c.gameId)))
+  }
+
+  const clearEsdfSelection = () => setEsdfSelected(new Set())
+
+  const runBatchEsdf = async () => {
+    const ids = [...esdfSelected]
+    if (ids.length === 0) {
+      setToast('请先勾选要迁移的游戏')
+      return
+    }
+    if (!window.confirm(
+      `确认对选中的 ${ids.length} 款游戏执行 WASD→ESDF 整体右移吗？\n\n` +
+      '· 只改配置文件里的字母键位，不碰数字/鼠标/修饰键\n' +
+      '· Q/A/Z 会空出，请到游戏内自行安排\n' +
+      '· 每款写入前自动备份，可从备份恢复\n' +
+      '· 请先完全退出这些游戏',
+    )) {
+      setToast('已取消批量迁移')
+      return
+    }
+    setIsBatchMigrating(true)
+    setEsdfBatchResult(null)
+    try {
+      const response = await fetch(API_BASE + '/api/adapters/esdf-batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ gameIds: ids }),
+      })
+      const result = await response.json()
+      setEsdfBatchResult(result)
+      setToast(result.message || '批量迁移完成')
+      // Refresh candidate list to reflect new layout
+      await loadEsdfCandidates(false)
+    } catch {
+      setToast('批量迁移失败：无法连接本地服务')
+    } finally {
+      setIsBatchMigrating(false)
+    }
+  }
+
+  // ─── One-click ESDF migration (read real config → shift letter keys → write back) ──
+
+  const migrateEsdfOneClick = async () => {
+    if (!window.confirm(
+      `确认对「${activeGame.name}」执行一键 ESDF 迁移吗？\n\n` +
+      '将读取游戏配置文件，把 Q/W/E/R/A/S/D/F/Z/X/C/V 等字母键整体右移（WASD→ESDF），QAZ 空出。\n' +
+      '写入前会自动备份原文件。请先完全退出游戏。',
+    )) {
+      setToast('已取消 ESDF 迁移')
+      return
+    }
+    setIsMigratingEsdf(true)
+    setWriteResult(null)
+    try {
+      // Optional: pass current profile custom keys for non-default actions
+      const customKeys: Record<string, string> = {}
+      for (const b of activeProfile.bindings) {
+        if (!b.key) continue
+        // Only send keys that look customized (not the classic WASD defaults)
+        const wasdDefaults: Record<string, string> = {
+          forward: 'W', left: 'A', back: 'S', right: 'D',
+          ability1: 'Q', ability2: 'E', ability3: 'R', ultimate: 'F',
+          interact: 'E', jump: 'Space',
+        }
+        const defaultVal = wasdDefaults[b.id]
+        if (defaultVal && b.key.toUpperCase() === defaultVal.toUpperCase()) continue
+        // If already ESDF movement, skip (pure shift will handle letters)
+        if (['forward', 'left', 'back', 'right'].includes(b.id)) continue
+        customKeys[b.id] = b.key
+      }
+
+      const response = await fetch(API_BASE + '/api/adapters/esdf-migrate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          gameId: activeGame.id,
+          configPath: activeGame.configPathLabel || undefined,
+          fileName: activeConfigFileName || undefined,
+          customKeys: Object.keys(customKeys).length > 0 ? customKeys : undefined,
+        }),
+      })
+      const result = await response.json()
+      setWriteResult({ success: result.success, message: result.message })
+      if (result.success) {
+        // Sync UI profile to ESDF layout
+        shiftBindingsRight()
+        const now = new Intl.DateTimeFormat('zh-CN', { hour: '2-digit', minute: '2-digit' }).format(new Date())
+        setRestorePoints((points) => [{
+          id: `restore-${Date.now()}`,
+          gameId: activeGame.id,
+          gameName: activeGame.name,
+          profileName: `ESDF迁移 · ${activeProfile.name}`,
+          timestamp: `今天 ${now}`,
+          backupPath: result.backupPath ?? '',
+          originalPath: result.writtenPath ?? '',
+        }, ...points])
+        setToast(result.skipped
+          ? (result.message || `${activeGame.name} 已是 ESDF 布局，无需迁移`)
+          : result.changedCount > 0
+            ? `已对 ${activeGame.name} 完成 ESDF 迁移（${result.changedCount} 处改动），请重启游戏`
+            : (result.message || `已处理 ${activeGame.name}，未发现可右移的键`))
+      } else {
+        setToast(`ESDF 迁移失败：${result.message}`)
+      }
+    } catch {
+      setWriteResult({ success: false, message: '无法连接本地迁移服务' })
+      setToast('ESDF 迁移失败：无法连接本地服务')
+    } finally {
+      setIsMigratingEsdf(false)
+    }
+  }
+
   // ─── Write config to game (only for canWrite games) ─────────────────────
 
   const writeConfig = async () => {
@@ -1144,23 +1506,33 @@ function App() {
       setToast(`${activeGame.name} 暂不支持自动写入`)
       return
     }
-    const writeTarget = isLol ? '英雄联盟客户端云端设置' : `${activeGame.name} 本地配置文件`
-    if (!window.confirm(`确认将当前「${activeProfile.name}」写入${writeTarget}吗？\n写入前会尽量创建备份，英雄联盟将通过 LCU 同步到云端。`)) {
+    if (activeStrategy?.implemented === false) {
+      setToast(`方案「${activeStrategy.name}」尚未实现，请选择其他方案`)
+      return
+    }
+    const strategyName = activeStrategy?.name ?? ''
+    const writeTarget = isLol && activeStrategyId === 'lol-lcu-cloud'
+      ? '英雄联盟客户端云端设置（LCU API）'
+      : `${activeGame.name} 本地配置文件（${strategyName || activeConfigFileName}）`
+    if (!window.confirm(`确认将当前「${activeProfile.name}」写入${writeTarget}吗？\n写入前会尽量创建备份。${strategyName ? `\n使用方案：${strategyName}` : ''}`)) {
       setToast('已取消写入')
       return
     }
     setIsWriting(true)
     setWriteResult(null)
     try {
-      const response = await fetch('/api/adapters/write', {
+      const response = await fetch(API_BASE + '/api/adapters/write', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           gameId: activeGame.id,
           profileName: activeProfile.name,
           modeId: activeModeId,
+          configPath: activeGame.configPathLabel || undefined,
           configText: nativeConfigText,
-          fileName: getConfigFileName(activeGame.id),
+          fileName: activeConfigFileName,
+          strategyId: activeStrategyId || undefined,
+          configFormat: activeConfigFormat,
         }),
       })
       const result = await response.json()
@@ -1389,9 +1761,29 @@ function App() {
                 <FileOutput size={15} />预览变更
               </button>
 
-              {/* 5. 写入配置 */}
+              {/* 5. 一键 ESDF 迁移（当前选中游戏） */}
+              <button
+                className="native-toolbar-btn esdf-btn"
+                onClick={() => void migrateEsdfOneClick()}
+                disabled={isMigratingEsdf || isWriting}
+                title="对当前选中游戏：读配置 → WASD 字母键整体右移为 ESDF（自动备份）"
+              >
+                <ArrowRightLeft size={15} />{isMigratingEsdf ? '迁移中' : '本游戏ESDF'}
+              </button>
+
+              {/* 5b. 批量 ESDF 工作台 */}
+              <button
+                className="native-toolbar-btn esdf-batch-btn"
+                onClick={() => void loadEsdfCandidates(true)}
+                disabled={isLoadingEsdf || isBatchMigrating}
+                title="扫描全部已安装游戏，勾选多款批量做 WASD→ESDF 整体右移（QAZ 空出）"
+              >
+                <Layers3 size={15} />{isLoadingEsdf ? '分析中' : '批量ESDF'}
+              </button>
+
+              {/* 6. 写入配置（自定义改键 / 完整配置档写入） */}
               {activeGame.canWrite ? (
-                <button className="native-toolbar-btn write-btn" onClick={() => void writeConfig()} disabled={isWriting} title={isLol ? '写入配置并同步到云端' : '安全写入配置（自动备份）'}>
+                <button className="native-toolbar-btn write-btn" onClick={() => void writeConfig()} disabled={isWriting || isMigratingEsdf} title={isLol ? '写入配置并同步到云端' : '将当前配置档写入（自定义改键，自动备份）'}>
                   <ShieldCheck size={15} />{isWriting ? '写入中' : (isLol ? '写入云端' : '写入')}
                 </button>
               ) : (
@@ -1405,6 +1797,135 @@ function App() {
                 <span />{activeGame.canWrite ? '可写入' : '仅预览'}
               </span>
             </div>
+
+            {/* ─── 批量 ESDF 迁移工作台 ─── */}
+            {showEsdfWorkbench && (
+              <div className="esdf-workbench">
+                <div className="esdf-workbench-header">
+                  <div>
+                    <div className="esdf-workbench-title">
+                      <ArrowRightLeft size={15} />
+                      批量 ESDF 迁移工作台
+                    </div>
+                    <div className="esdf-workbench-sub">
+                      WASD 整体右移一个键位 → ESDF · Q/A/Z 空出（进游戏自行安排）· 数字/鼠标/修饰键不动 · 写入前自动备份
+                    </div>
+                  </div>
+                  <div className="esdf-workbench-actions">
+                    <button className="esdf-mini-btn" onClick={() => void loadEsdfCandidates(false)} disabled={isLoadingEsdf}>
+                      <RefreshCw size={13} /> 重新分析
+                    </button>
+                    <button className="esdf-mini-btn" onClick={selectAllMigratable} disabled={esdfCandidates.length === 0}>
+                      全选可迁移
+                    </button>
+                    <button className="esdf-mini-btn" onClick={clearEsdfSelection} disabled={esdfSelected.size === 0}>
+                      清空
+                    </button>
+                    <button
+                      className="esdf-apply-btn"
+                      onClick={() => void runBatchEsdf()}
+                      disabled={isBatchMigrating || isLoadingEsdf || esdfSelected.size === 0}
+                    >
+                      {isBatchMigrating ? '迁移中…' : `一键迁移 ${esdfSelected.size} 款`}
+                    </button>
+                    <button className="esdf-mini-btn" onClick={() => setShowEsdfWorkbench(false)} title="关闭">
+                      <X size={14} />
+                    </button>
+                  </div>
+                </div>
+
+                {esdfSummary && <div className="esdf-workbench-summary">{esdfSummary}</div>}
+
+                {esdfBatchResult && (
+                  <div className={`esdf-batch-result ${esdfBatchResult.results?.every((r) => r.success) ? 'is-ok' : 'is-partial'}`}>
+                    <div className="esdf-batch-result-msg">{esdfBatchResult.message}</div>
+                    <div className="esdf-batch-result-list">
+                      {(esdfBatchResult.results ?? []).map((r) => (
+                        <div key={r.gameId} className={`esdf-batch-result-item ${r.success ? (r.skipped || r.changedCount === 0 ? 'is-skip' : 'is-ok') : 'is-fail'}`}>
+                          <span className="esdf-batch-result-icon">
+                            {r.success ? (r.skipped || r.changedCount === 0 ? '跳过' : 'OK') : '失败'}
+                          </span>
+                          <span className="esdf-batch-result-msg-text">{r.message}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {isLoadingEsdf ? (
+                  <div className="esdf-workbench-loading">正在扫描已安装游戏并分析配置中的字母键…</div>
+                ) : esdfCandidates.length === 0 ? (
+                  <div className="esdf-workbench-loading">暂无数据。点击「重新分析」扫描本机游戏配置。</div>
+                ) : (
+                  <div className="esdf-candidate-list">
+                    {esdfCandidates.map((c) => {
+                      const selected = esdfSelected.has(c.gameId)
+                      const statusLabel = c.canMigrate
+                        ? (c.layout === 'wasd' ? 'WASD' : '可右移')
+                        : c.alreadyEsdf
+                          ? '已是ESDF'
+                          : c.status === 'no-config' || c.status === 'unparsed'
+                            ? '无法解析'
+                            : c.status === 'no-keys'
+                              ? '无字母键'
+                              : '跳过'
+                      return (
+                        <div
+                          key={c.gameId}
+                          className={`esdf-candidate ${c.canMigrate ? 'is-migratable' : ''} ${c.alreadyEsdf ? 'is-esdf' : ''} ${selected ? 'is-selected' : ''}`}
+                        >
+                          <label className="esdf-candidate-main">
+                            <input
+                              type="checkbox"
+                              checked={selected}
+                              disabled={!c.canMigrate}
+                              onChange={() => toggleEsdfSelect(c.gameId)}
+                            />
+                            <span className="esdf-candidate-dot" style={{ backgroundColor: c.color || '#6a8a9a' }} />
+                            <span className="esdf-candidate-name">{c.name}</span>
+                            <span className={`esdf-candidate-status status-${c.canMigrate ? 'ok' : c.alreadyEsdf ? 'esdf' : 'off'}`}>
+                              {statusLabel}
+                              {c.canMigrate && c.changedCount > 0 ? ` · ${c.changedCount}键` : ''}
+                            </span>
+                            <button
+                              type="button"
+                              className="esdf-candidate-expand"
+                              onClick={() => setExpandedEsdfId(expandedEsdfId === c.gameId ? null : c.gameId)}
+                              title="查看改动明细"
+                            >
+                              <ChevronDown size={13} className={expandedEsdfId === c.gameId ? 'is-open' : ''} />
+                            </button>
+                          </label>
+                          {expandedEsdfId === c.gameId && (
+                            <div className="esdf-candidate-detail">
+                              <div className="esdf-candidate-path">{c.configPath}{c.configFileName ? `\\${c.configFileName}` : ''}</div>
+                              <div className="esdf-candidate-msg">{c.message}</div>
+                              {c.knowledge?.howTo && (
+                                <div className="esdf-candidate-howto">
+                                  <span className="esdf-howto-label">
+                                    改法{c.knowledge.source ? ` · ${c.knowledge.source}` : ''}
+                                    {c.knowledge.confidence ? ` · 置信 ${c.knowledge.confidence}` : ''}
+                                  </span>
+                                  {c.knowledge.howTo}
+                                </div>
+                              )}
+                              {c.changes.length > 0 && (
+                                <div className="esdf-candidate-changes">
+                                  {c.changes.map((ch, i) => (
+                                    <div key={i} className="esdf-change-line">{ch}</div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
               {hasDetectedGames && detectedGames.length > 0 && (
                 <div className="detected-games-list">
                   {/* Adapted games */}
@@ -1494,6 +2015,73 @@ function App() {
               <div><span>变更项</span><strong className={changedItems.length ? 'changed' : ''}>{changedItems.length} / {patchSet.totalCount} 项</strong></div>
               <div><span>写入能力</span><strong className={activeGame.canWrite ? '' : 'changed'}>{activeGame.canWrite ? '支持自动写入' : '暂不支持自动写入'}</strong></div>
             </div>
+
+            {/* Read current game config + shift right buttons */}
+            {activeGame.canWrite && (
+              <div className="read-config-row">
+                <button
+                  className="subtle-button read-config-btn"
+                  onClick={() => void readGameCurrentConfig()}
+                  disabled={isReadingGameConfig}
+                  title="读取游戏当前的键位配置并同步到当前配置档"
+                >
+                  <FolderClock size={15} />
+                  {isReadingGameConfig ? '正在读取…' : '读取当前键位配置'}
+                </button>
+                <button
+                  className="subtle-button read-config-btn"
+                  onClick={shiftBindingsRight}
+                  title="把当前配置的所有字母键整体右移一个键位（WASD→ESDF），QAZ 自动空出"
+                >
+                  <ArrowRightLeft size={15} />
+                  整体右移（WASD→ESDF）
+                </button>
+                {gameConfigRead && (
+                  <span className={`read-config-status ${gameConfigRead.success ? 'success' : 'error'}`}>
+                    {gameConfigRead.message}
+                  </span>
+                )}
+              </div>
+            )}
+
+            {/* Write strategy selector (for games with multiple strategies) */}
+            {hasMultipleStrategies && (
+              <div className="write-strategy-section">
+                <div className="write-strategy-label">
+                  <Wrench size={14} />
+                  <span>写入方案</span>
+                  <span className="write-strategy-hint">（如方案不生效可尝试其他方案）</span>
+                </div>
+                <div className="write-strategy-list">
+                  {writeStrategies.map((strategy) => (
+                    <button
+                      key={strategy.id}
+                      className={`write-strategy-card ${activeStrategyId === strategy.id ? 'is-active' : ''} ${strategy.implemented === false ? 'is-disabled' : ''}`}
+                      onClick={() => { if (strategy.implemented !== false) setActiveStrategyId(strategy.id) }}
+                      disabled={strategy.implemented === false}
+                      title={strategy.notes ?? strategy.description}
+                    >
+                      <div className="write-strategy-card-header">
+                        <span className="write-strategy-name">{strategy.name}</span>
+                        <span className={`reliability-badge reliability-${strategy.reliability}`}>
+                          {strategy.reliability === 'high' ? '高可靠' : strategy.reliability === 'medium' ? '中可靠' : '低可靠'}
+                        </span>
+                      </div>
+                      <div className="write-strategy-desc">{strategy.description}</div>
+                      {strategy.implemented === false && (
+                        <div className="write-strategy-soon">开发中，敬请期待</div>
+                      )}
+                    </button>
+                  ))}
+                </div>
+                {activeStrategy?.notes && (
+                  <div className="write-strategy-notes">
+                    <Info size={13} />
+                    <span>{activeStrategy.notes}</span>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* LoL write-unsupported explanation */}
             {!activeGame.canWrite && activeGame.writeUnsupportedReason && (

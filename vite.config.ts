@@ -1,10 +1,20 @@
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, readdirSync, copyFileSync, writeFileSync, unlinkSync, watch as watchFileSystem } from 'node:fs'
 import { basename, dirname, join, normalize, resolve } from 'node:path'
+import { createRequire } from 'node:module'
 import https from 'node:https'
 import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import { GlobalKeyboardListener } from 'node-global-key-listener'
+
+// Reuse the production ESDF migration implementation in dev mode
+const nodeRequire = createRequire(import.meta.url)
+const apiHandlers = nodeRequire('./electron/api-handlers.cjs') as {
+  migrateEsdfConfig: (req: Record<string, unknown>) => { success: boolean; message: string; [k: string]: unknown }
+  previewEsdfConfig: (req: Record<string, unknown>) => { success: boolean; message: string; [k: string]: unknown }
+  listEsdfCandidates: () => { success: boolean; message: string; [k: string]: unknown }
+  batchMigrateEsdf: (req: Record<string, unknown>) => { success: boolean; message: string; [k: string]: unknown }
+}
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -2080,6 +2090,62 @@ const keyforgeAdapterPlugin = (): Plugin => ({
           response.statusCode = 400
           response.setHeader('Content-Type', 'application/json; charset=utf-8')
           response.end(JSON.stringify({ success: false, message: '无效的写入请求。' }))
+        }
+      })
+    })
+
+    // ── One-click ESDF migration (shared with electron/api-handlers.cjs) ──
+    server.middlewares.use('/api/adapters/esdf-migrate', (request, response, next) => {
+      if (request.method !== 'POST') { next(); return }
+      let body = ''
+      request.on('data', (chunk) => { body += chunk })
+      request.on('end', () => {
+        try {
+          const req = body ? JSON.parse(body) : {}
+          const result = apiHandlers.migrateEsdfConfig(req)
+          response.statusCode = result.success ? 200 : 400
+          response.setHeader('Content-Type', 'application/json; charset=utf-8')
+          response.setHeader('Cache-Control', 'no-store')
+          response.end(JSON.stringify(result))
+        } catch (err) {
+          response.statusCode = 500
+          response.setHeader('Content-Type', 'application/json; charset=utf-8')
+          response.end(JSON.stringify({ success: false, message: `ESDF 迁移失败：${err instanceof Error ? err.message : String(err)}` }))
+        }
+      })
+    })
+
+    server.middlewares.use('/api/adapters/esdf-candidates', (request, response, next) => {
+      if (request.method !== 'GET') { next(); return }
+      try {
+        const result = apiHandlers.listEsdfCandidates()
+        response.statusCode = result.success ? 200 : 500
+        response.setHeader('Content-Type', 'application/json; charset=utf-8')
+        response.setHeader('Cache-Control', 'no-store')
+        response.end(JSON.stringify(result))
+      } catch (err) {
+        response.statusCode = 500
+        response.setHeader('Content-Type', 'application/json; charset=utf-8')
+        response.end(JSON.stringify({ success: false, message: String(err) }))
+      }
+    })
+
+    server.middlewares.use('/api/adapters/esdf-batch', (request, response, next) => {
+      if (request.method !== 'POST') { next(); return }
+      let body = ''
+      request.on('data', (chunk) => { body += chunk })
+      request.on('end', () => {
+        try {
+          const req = body ? JSON.parse(body) : {}
+          const result = apiHandlers.batchMigrateEsdf(req)
+          response.statusCode = result.success ? 200 : 400
+          response.setHeader('Content-Type', 'application/json; charset=utf-8')
+          response.setHeader('Cache-Control', 'no-store')
+          response.end(JSON.stringify(result))
+        } catch (err) {
+          response.statusCode = 500
+          response.setHeader('Content-Type', 'application/json; charset=utf-8')
+          response.end(JSON.stringify({ success: false, message: String(err) }))
         }
       })
     })

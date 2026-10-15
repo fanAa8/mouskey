@@ -224,6 +224,34 @@ export type GameDefinition = {
   cloudSync?: boolean
   /** LCU API configuration (for Riot games) */
   lcuApi?: LcuApiConfig
+  /** Whether this is an engine template (not a real game), excluded from game lists */
+  isEngineTemplate?: boolean
+  /** Multiple write strategies for this game (user can try different approaches) */
+  writeStrategies?: WriteStrategy[]
+  /** Default strategy id (if not specified, uses first strategy) */
+  defaultStrategy?: string
+}
+
+/** A single write strategy for modifying a game's keybindings */
+export type WriteStrategy = {
+  /** Unique identifier for this strategy (e.g. 'ue4-traditional-inputini') */
+  id: string
+  /** Human-readable name shown in UI */
+  name: string
+  /** Detailed description of what this strategy does */
+  description: string
+  /** Config file format used by the formatter */
+  configFormat: string
+  /** Output config file name (e.g. 'Input.ini', 'keyforge.cfg') */
+  configFileName: string
+  /** Relative path from game config directory to the target file (optional) */
+  targetSubPath?: string
+  /** How reliable this strategy is expected to be */
+  reliability: 'high' | 'medium' | 'low'
+  /** Additional notes or warnings shown to the user */
+  notes?: string
+  /** Whether this strategy is currently implemented (false = placeholder, coming soon) */
+  implemented?: boolean
 }
 
 /** A single binding change derived from the user's preset */

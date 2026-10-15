@@ -1,141 +1,361 @@
-# MousKey（原 Keyforge）
+# MousKey
 
-> 一次设置 ESDF 布局，所有游戏通用 —— 真正修改游戏配置文件的本地键位管理工具，附带实时按键显示悬浮窗。
+> 一次设置 ESDF，尽可能应用到所有游戏。真正修改游戏配置文件，不做运行时键盘映射拦截。
 
-## 这是什么
+MousKey（原名 Keyforge）是一个 Windows 本地游戏键位管理工具。它的核心目标是：玩家维护一套自己的键位习惯，例如 ESDF 移动布局；MousKey 根据游戏的配置文件、引擎和格式，把方案写入游戏原生配置，让游戏内显示的键位和实际操作保持一致。
 
-MousKey 是一个 Windows 本地游戏键位管理工具。核心理念是：**玩家维护自己的操作习惯方案（如 ESDF 布局），工具按目标游戏的原生配置格式自动生成并写入配置文件**，而不是用键盘钩子做运行时映射拦截。
+项目同时包含一个桌面实时按键悬浮窗，用于游戏操作检查、直播和录屏。
 
-同时内置一个桌面悬浮窗，实时显示键盘和鼠标的按下状态，可用于直播、录屏或自我检查操作。
+## 产品目标
 
-## 为什么做这个
+MousKey 不是单纯的键盘映射器，也不是通过键盘钩子把 W 假装成 E。产品目标分为两个阶段：
 
-传统 WASD 布局的问题：打字时左手需要从基准键位（ASDF）移开，游戏和打字之间要反复切换手型。ESDF 布局把移动键整体右移一位，左手自然停留在打字基准位上，并且左侧空出 Q/A/Z 三个键可以自由绑定高频操作。
+### 当前阶段：WASD → ESDF 迁移
 
-但每个游戏都要手动改一遍键位非常繁琐。MousKey 的目标是：**设置一次自己的方案，自动写入到所有支持的游戏里**。
+只解决最有价值、最通用的一件事：
 
-## 功能特性
+- 默认 WASD 移动整体向右移动一格
+- `W → E`：前进
+- `A → S`：左移
+- `S → D`：后退
+- `D → F`：右移
+- 其他主键区字母也按同样规则右移
+- `Q/A/Z` 空出来，由玩家进入游戏后自行安排
+- 数字键、鼠标键、Space、Shift、Ctrl、Alt 等不主动修改
 
-### 键位配置
-- 可视化键盘 + 鼠标布局，点击按键即可修改绑定
-- WASD / ESDF 两套方案一键切换（ESDF 为整体右移一位的布局）
-- 个人配置档管理，支持多套方案
-- 预设方案的保存、导入、导出、删除
-- 冲突按键自动交换
-- Q/A/Z 三个键在 ESDF 模式下标记为"可自定义"，由玩家自行安排
+这样即使 MousKey 还不知道某个游戏中每个键的具体功能，也能先完成大多数默认 WASD 游戏的基础迁移。
 
-### 游戏适配
-- 数据驱动的适配器架构，每个游戏一个 JSON 描述文件
-- 自动扫描已安装游戏（全量 Steam 库 + Ludusavi 9442 款游戏清单）
-- 写入前自动备份原配置，创建恢复点
-- 已验证可写入的游戏：
-  - **英雄联盟**（PersistedSettings.json + LCU API，支持云同步）
-  - **CS2**（cfg 文件写入）
-  - **文明6**（InputSettings.json 读改写，已验证生效）
-  - **饥荒**（settings.ini）
-  - **穿越火线**（KeySettings.ini）
-- 对允许改键的游戏，通用规则是"WASD 整体右移到 ESDF"，覆盖 80% 场景
+### 后续阶段：理解每个游戏的动作功能
 
-### 实时按键显示悬浮窗
-- 全局键盘鼠标监听（Windows API `GetAsyncKeyState` 轮询，不依赖驱动）
-- 四种显示模式：仅按键 / 游戏模式（半幅键盘）/ 全键盘（104键）/ 自定义区域
-- 三套自定义区域，可在可视化键盘上框选需要显示的按键
-- 鼠标独立显示，可单独开关；支持左键、右键、中键、侧键1、侧键2
-- 键盘使用矢量按键素材（CC0 协议），提供 White / Black 两套主题
-- 悬浮窗可拖动、可锁定、可隐藏，位置和大小自动保存
-- 透明度、缩放、高亮颜色、高亮透明度均可调
-- 系统托盘图标，后台常驻
+后续会继续为各游戏建立动作语义映射，例如：
+
+- 读取某个键对应的是前进、跳跃、交互、技能还是物品
+- 将游戏现有键位转换为 MousKey 的通用动作模型
+- 针对空出的 Q/A/Z 给出合理建议
+- 支持更完整的自定义改键和跨游戏方案应用
+
+这部分需要逐游戏、逐格式验证，不能仅依赖配置文件路径推断。
+
+## 当前功能
+
+### 键位配置中心
+
+- 可视化 104 键键盘和鼠标布局
+- 鼠标左键、右键、中键、侧键 1、侧键 2
+- WASD / ESDF 方案切换
+- 个人配置档和多套预设
+- 点击键盘按键修改动作绑定
+- 冲突键自动交换
+- Q/A/Z 在 ESDF 模式下保留为空，交给玩家自行配置
+- 预设保存、加载、导入、导出、删除
+- 变更预览和恢复点记录
+
+### 游戏扫描与配置迁移
+
+- 扫描 Steam 库
+- 使用 Ludusavi manifest 辅助发现配置目录
+- UE4/UE5、Unity、Source/Source2、JSON、INI 等通用探测
+- 写入前创建带时间戳的备份
+- 支持单游戏写入
+- 支持批量 ESDF 迁移工作台
+- 批量工作台会先分析每款游戏并分类：
+  - `WASD / 可右移`
+  - `已是 ESDF`
+  - `无法解析`
+  - `无可迁移字母键`
+- 已是 ESDF 的配置会跳过，避免重复迁移导致二次右移
+- 批量迁移逐游戏独立处理，一款失败不会阻断其他游戏
+
+### 支持的通用配置格式
+
+| 格式 | 处理方式 | 当前可靠性 |
+|---|---|---|
+| UE4/UE5 传统 `Input.ini` | 修改 `AxisMappings` / `ActionMappings` 的 `Key=` 值 | 较高 |
+| Source / Source2 `cfg` | 修改 `bind "w" "+forward"` 等命令 | 较高 |
+| Battlerite 风格 JSON | 修改 `"k.W"` → `"k.E"`，保留原 JSON 其他字段 | 较高 |
+| 通用 JSON | 尝试识别字符串、数组和常见 `key` 字段 | 中等 |
+| 通用 INI | 修改明显的单字母键值，保留其他设置 | 中等 |
+| UE5 Enhanced Input `.uasset` | 当前不直接修改二进制资产 | 暂不支持 |
+
+### 已有专项适配器
+
+当前源码中已有以下游戏/模板适配器：
+
+- 英雄联盟
+- CS2
+- 穿越火线
+- 饥荒
+- 文明 6
+- Grounded 2
+- Battlerite 动态 JSON 识别
+- UE4/UE5 传统 Input.ini 通用模板
+
+已确认或重点验证的功能：
+
+- 英雄联盟：LCU API / PersistedSettings.json 路径，部分环境支持云端同步
+- 文明 6：`InputSettings.json` 读改写
+- Battlerite：`%APPDATA%/Battlerite/KMInput.json` 读取和 JSON 保留式写入逻辑
+- CS2：Source bind 配置生成
+
+不同游戏、发行平台和版本可能使用不同配置路径。检测到游戏不等于已经验证写入生效，UI 应使用“可尝试通用写入”而不是直接承诺支持。
+
+### 游戏键位知识库
+
+文件：`src/data/keybind-knowledge.json`
+
+知识库记录：
+
+- 游戏名称和 Steam AppID
+- 引擎和配置格式
+- 常见 Windows 配置路径
+- 键位字段提示
+- 可能的修改方式
+- ESDF 可行性等级
+- 资料来源和置信度
+
+主要资料来源：
+
+- [PCGamingWiki](https://www.pcgamingwiki.com)：配置路径和游戏数据说明
+- [Ludusavi Manifest](https://github.com/mtkennerly/ludusavi-manifest)：存档/配置路径底座
+- 游戏社区资料和本机实测
+
+Ludusavi 主要解决“配置可能在哪里”，不保证指出“哪一个字段是键位”。字段语义仍需按引擎和单游戏格式验证。
+
+### 实时按键悬浮窗
+
+- Windows API `GetAsyncKeyState` 轮询
+- 约 50ms 更新一次按键状态
+- 仅按键、游戏模式、全键盘、自定义区域等显示模式
+- 键盘和鼠标状态独立显示
+- 支持鼠标侧键
+- 悬浮窗可移动、锁定、隐藏、调整大小
+- 位置和显示配置持久化
+- White / Black 两套键盘素材主题
+- 透明度、缩放、高亮颜色、高亮透明度
+- 系统托盘常驻
+- 使用 Windows `screen-saver` 级别和原生 `HWND_TOPMOST` 尝试保持最前
+- 无边框全屏/窗口化全屏通常可以显示在游戏上方
+- 独占全屏由图形 API 控制，普通窗口无法保证覆盖；遇到这种情况应使用游戏的无边框全屏模式
 
 ## 技术栈
 
-- **前端**：React 18 + TypeScript + Vite
-- **桌面框架**：Electron
-- **原生调用**：koffi（FFI，调用 Windows API 做全局按键监听）
-- **样式**：原生 CSS（深色科技风）
-- **游戏数据库**：[Ludusavi](https://github.com/mtkennerly/ludusavi) manifest（CC0 协议）
-- **按键素材**：[vector-keyboard-controls](https://github.com/)（CC0 协议）
+- 前端：React 18 + TypeScript
+- 构建：Vite
+- 桌面：Electron 44.1.1
+- 原生调用：koffi + Windows API
+- 样式：原生 CSS，深色科技风
+- 游戏路径数据：Ludusavi manifest
+- 配置写入：Electron 本地 HTTP API
+- 开发 API：Vite middleware
+- 生产 API：Electron 内置 HTTP server，默认端口 `4175`
+- 开发前端：默认 `http://127.0.0.1:4174/`
+
+## 目录结构
+
+```text
+.
+├── electron/
+│   ├── main.cjs                 # Electron 主进程、窗口、托盘、悬浮窗、输入监听、生产 API
+│   ├── api-handlers.cjs         # 游戏检测、配置读写、备份、迁移、预设、LoL API
+│   └── convert-helpers.cjs      # 相关转换辅助代码
+├── src/
+│   ├── App.tsx                  # 主界面和交互流程
+│   ├── styles.css               # 全部前端样式
+│   ├── adapters/
+│   │   ├── types.ts             # GameDefinition、PatchSet、WriteStrategy 等类型
+│   │   ├── games.ts              # 通用动作模型和预设方案
+│   │   ├── patchGenerator.ts     # 通用动作 → 原生变更集
+│   │   └── formatters.ts         # UE4、Source、INI、LoL 等格式化器
+│   ├── games/                   # 专项游戏适配器 JSON
+│   ├── lib/
+│   │   ├── esdfMigration.ts      # ESDF 字母右移规则和冲突检测
+│   │   ├── gameRegistry.ts       # 游戏注册表
+│   │   └── reverseMapper.ts      # 原生键位 → 通用动作反向映射
+│   └── data/
+│       ├── ludusavi-games.json   # Ludusavi 游戏路径数据
+│       └── keybind-knowledge.json # 键位路径和修改方式知识库
+├── public/
+│   ├── overlay.html              # 实时按键悬浮窗页面
+│   ├── keyboard-assets/          # White 键盘素材
+│   └── keyboard-assets-black/    # Black 键盘素材
+├── scripts/
+│   ├── test-esdf-migrate.cjs     # 四种格式迁移冒烟测试
+│   └── test-esdf-batch.cjs       # 预览/批量迁移冒烟测试
+├── vite.config.ts                # Vite 开发服务器和开发 API middleware
+├── package.json                  # 依赖和脚本
+├── HANDOFF.md                    # 较早阶段的详细交接记录
+└── release/mouskey-final/        # 手动打包的绿色版输出目录
+```
+
+## 重要 API
+
+生产模式由 `electron/main.cjs` 提供；开发模式由 `vite.config.ts` 提供同名接口。
+
+| API | 作用 |
+|---|---|
+| `GET /api/adapters/detect-all` | 扫描已安装游戏 |
+| `GET /api/adapters/esdf-candidates` | 分析全部游戏的 ESDF 迁移状态 |
+| `POST /api/adapters/esdf-preview` | 预览单个游戏，不写文件 |
+| `POST /api/adapters/esdf-migrate` | 迁移当前游戏的配置 |
+| `POST /api/adapters/esdf-batch` | 批量迁移多个游戏 |
+| `POST /api/adapters/read` | 读取游戏当前配置 |
+| `POST /api/adapters/write` | 按专项适配器/配置档写入 |
+| `GET /api/presets/list` | 列出本地预设 |
+| `POST /api/presets/save` | 保存本地预设 |
+| `GET /api/overlay/status` | 获取悬浮窗状态 |
+| `POST /api/overlay/show` | 显示悬浮窗 |
+| `POST /api/overlay/hide` | 隐藏悬浮窗 |
+| `POST /api/overlay/toggle` | 切换悬浮窗 |
 
 ## 开发运行
 
-```bash
+Windows PowerShell：
+
+```powershell
+cd "C:\Users\Administrator\Documents\Codex\2026-09-02\1-2-github"
+
 # 安装依赖
 npm install
 
-# 启动开发服务器（Vite，端口 4174）
+# 启动开发服务器
 npm run dev -- --host 127.0.0.1 --port 4174 --strictPort
 
-# 另开一个终端启动 Electron
+# 另一个 PowerShell 窗口启动 Electron
 npx electron electron/main.cjs
 ```
 
-## 生产构建
+注意：当前项目在 Windows 上开发。不要用 `bash -lc`、`zsh`、`which` 或 Unix 路径判断工具是否安装；使用 PowerShell 的 `Get-Command` 或 `where.exe`。
 
-```bash
-# 构建前端
+## 测试与构建
+
+```powershell
+# TypeScript 检查
+npx tsc --noEmit
+
+# ESDF 四种格式测试
+node scripts/test-esdf-migrate.cjs
+
+# ESDF 预览/批量测试
+node scripts/test-esdf-batch.cjs
+
+# 生产构建（包含 tsc -b 和 vite build）
 npm run build
 ```
 
-构建产物在 `dist/`。Electron 主进程在生产模式下会直接加载 `dist/index.html`（相对路径，可离线运行）。
+当前已验证的测试结果：
 
-### 打包绿色版
+- `test-esdf-migrate.cjs`：43 项通过
+- `test-esdf-batch.cjs`：9 项通过
+- `npm run build`：通过
 
-本项目不依赖 electron-builder，采用手动绿色版打包：
+## 生产绿色版同步
 
-1. 下载对应版本的 Electron win32-x64 zip
-2. 解压后把 `electron.exe` 重命名为 `mouskey.exe`
-3. 把应用文件放到 `resources/app/` 下，包含：
-   - `electron/main.cjs`
-   - `dist/`（前端构建产物）
-   - `public/`（按键素材等静态资源）
-   - `package.json`
-   - `node_modules/koffi/` 和 `node_modules/@koromix/koffi-win32-x64/`（仅需这两个原生模块）
-4. 保留 Electron 运行时必须的 dll、pak、dat 文件和 `resources/default_app.asar`
+只修改源码版本，生产绿色版从源码构建和同步，不要直接在 `release/mouskey-final/resources/app` 里开发。
 
-## ESDF 迁移规则
+```powershell
+$project = "C:\Users\Administrator\Documents\Codex\2026-09-02\1-2-github"
+$final = "$project\release\mouskey-final\resources\app"
 
-核心规则非常简单：**主键区字母键整体右移一位**。
+Copy-Item "$project\electron\api-handlers.cjs" "$final\electron\api-handlers.cjs" -Force
+Copy-Item "$project\electron\main.cjs" "$final\electron\main.cjs" -Force
+Remove-Item "$final\dist" -Recurse -Force -ErrorAction SilentlyContinue
+Copy-Item "$project\dist" "$final\dist" -Recurse -Force
+Copy-Item "$project\src\games" "$final\src\games" -Recurse -Force
+Copy-Item "$project\src\data\keybind-knowledge.json" "$final\src\data\keybind-knowledge.json" -Force
 
-| 原键位（WASD） | 新键位（ESDF） | 功能 |
-|---|---|---|
-| W | E | 前进 |
-| A | S | 左移 |
-| S | D | 后退 |
-| D | F | 右移 |
-| Q | W | 技能1 / 视角左旋 |
-| E | R | 技能2 / 视角右旋 |
-| F | G | 交互 / 攻击 |
-| 空格 | 空格 | 跳跃（不变） |
-| Shift/Ctrl/Alt | 不变 | 修饰键（不变） |
-
-空出的 Q/A/Z 三个键不做强制安排，留给玩家根据游戏自行绑定高频操作。
-
-## 项目结构
-
-```
-├── electron/
-│   └── main.cjs          # Electron 主进程：窗口、悬浮窗、按键监听、SSE服务
-├── src/
-│   ├── App.tsx           # 前端主应用（配置页 + 实时显示页）
-│   ├── styles.css        # 全部样式
-│   └── games/            # 数据驱动的游戏适配器（JSON）
-├── public/
-│   ├── overlay.html      # 悬浮窗页面
-│   ├── keyboard-assets/  # White 主题按键素材
-│   └── keyboard-assets-black/  # Black 主题按键素材
-├── vite.config.ts        # Vite 配置 + 本地文件读写 API
-└── dist/                 # 构建产物
+Get-Process -Name "mouskey" -ErrorAction SilentlyContinue | Stop-Process -Force
+Start-Sleep -Seconds 2
+Start-Process -FilePath "$project\release\mouskey-final\mouskey.exe"
 ```
 
-## 设计原则
+绿色版入口：
 
-1. **真正改配置文件，不做运行时映射** —— 游戏内显示的就是改后的键位，不会出现"显示一套、实际一套"
-2. **预设方案是源头，读取游戏现有配置只是可选能力** —— 读不到游戏配置不阻塞方案应用
-3. **写入前必备份** —— 每次写入都带时间戳备份，可随时恢复
-4. **通用规则优先，逐游戏适配兜底** —— 80% 的游戏用统一 ESDF 迁移规则，少数特殊游戏单独写适配器
-5. **本地运行，不上传任何数据**
+```text
+release/mouskey-final/mouskey.exe
+```
 
-## 许可证
+应用代码目录：
 
-MIT
+```text
+release/mouskey-final/resources/app/
+```
 
-按键素材来自 CC0 协议资源；游戏配置路径数据来自 Ludusavi manifest（CC0）。
+项目采用手动 Electron zip 方案，不使用 electron-builder。electron-builder 曾出现 EPERM 问题，不要重复切回该方案。
+
+## 数据和备份位置
+
+默认用户数据目录：
+
+```text
+%USERPROFILE%\Documents\Keyforge\presets\
+%USERPROFILE%\Documents\Keyforge\backups\
+```
+
+部分配置文件示例：
+
+```text
+%APPDATA%\Battlerite\KMInput.json
+%LOCALAPPDATA%\Firaxis Games\Sid Meier's Civilization VI\InputSettings.json
+```
+
+实际路径可能因为 Steam、WeGame、Documents 重定向、云同步和不同发行版而变化。写入前必须确认实际文件。
+
+## 安全和写入原则
+
+1. 只做本地配置文件读写，不上传用户配置。
+2. 不使用运行时键盘钩子来伪造游戏内按键。
+3. 写入前创建备份。
+4. 默认优先 read-modify-write，保留配置中的其他字段。
+5. 未知游戏只能显示“可尝试通用写入”，不能宣称已验证。
+6. 不强行修改 Q/A/Z；空键由玩家进游戏后自行安排。
+7. 已经是 ESDF 的配置不重复右移。
+8. 真实游戏验证前，不要把某个适配器标记为高可靠。
+
+## 已知限制
+
+### 独占全屏悬浮窗
+
+Electron 普通窗口可以在无边框全屏/窗口化全屏上置顶，但无法保证覆盖 DirectX/Vulkan 独占全屏。若悬浮窗在全屏游戏里消失，优先把游戏改成无边框全屏。
+
+### Enhanced Input
+
+一些 UE5 游戏使用 `InputMappingContext.uasset` 等二进制资产，不读取传统 `Input.ini`。Grounded 2 等游戏已经验证过传统 Input.ini 可能不生效。不要为了“覆盖更多游戏”直接覆盖未知二进制文件。
+
+### 云同步和运行时覆盖
+
+Steam Cloud、游戏客户端、服务器同步或游戏运行时保存可能覆盖 MousKey 的写入。写入前应关闭游戏，写入后重启游戏验证。
+
+### 键位语义尚未全量建立
+
+当前 ESDF 批量迁移主要修改键值，不一定知道每个键在游戏里的语义。QAZ 智能建议、动作读取和完整自定义映射属于后续工作。
+
+## 后续开发方向
+
+优先级建议：
+
+1. 用真实用户常玩的游戏验证批量 ESDF 迁移。
+2. 为验证成功的游戏补充专项适配器和回归测试。
+3. 完善 Source、UE4 传统 Input.ini、常见 Unity JSON 的字段读取。
+4. 为候选游戏显示准确的“已验证 / 可尝试 / 暂不可写”状态。
+5. 扩展 `keybind-knowledge.json`，记录路径、字段和真实改法。
+6. 读取游戏动作语义，生成 Q/A/Z 的合理功能建议。
+7. 最后再做“一键应用所有已验证游戏”的批量方案。
+
+## 交接给其他 AI 的关键要求
+
+- 先读本 README 和 `HANDOFF.md`，再改代码。
+- 当前主目标是 **WASD → ESDF 整体右移**，不是马上实现所有游戏的完整语义映射。
+- Q/A/Z 可以保持空白，不要擅自安排。
+- 必须真正修改游戏配置，不要改成运行时拦截方案。
+- 只改源码目录，构建后再同步绿色版。
+- 修改配置前保留备份，未知格式不要整文件覆盖。
+- Windows PowerShell 环境，不要套用 Linux/macOS 命令。
+- 每次完成代码改动都运行 TypeScript 检查、相关测试和生产构建。
+- 报告“已支持”时区分：源码实现、格式测试通过、本机验证、进游戏验证。
+- 不要重复尝试已确认失败的 electron-builder、uiohook-napi、node-global-key-listener 和 LoL 未验证 YAML 写入方案。
+
+## 许可证和资料来源
+
+项目代码按仓库现有许可证执行。键盘素材使用项目中已有的 CC0 资源；游戏路径资料来自 Ludusavi/PCGamingWiki 等公开资料时，应保留来源说明并遵守各自许可证。
+
+GitHub 仓库：<https://github.com/fanAa8/mouskey>

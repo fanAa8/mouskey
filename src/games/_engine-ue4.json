@@ -1,0 +1,85 @@
+{
+  "id": "_engine-ue4",
+  "name": "UE4/UE5 通用模板",
+  "genre": "通用",
+  "color": "#4A90D9",
+  "adapterLabel": "UE4 Input.ini (通用)",
+  "configPathLabel": "%LOCALAPPDATA%/<Game>/Saved/Config/Windows/Input.ini",
+  "configFormat": "ue4-ini",
+  "configFileName": "Input.ini",
+  "configRelativePath": "Input.ini",
+  "detectionType": "ue4-auto",
+  "isEngineTemplate": true,
+  "modes": [
+    { "id": "default", "name": "默认", "section": "/Script/Engine.InputSettings" }
+  ],
+  "defaultMode": "default",
+  "supportedActions": [
+    "forward", "left", "back", "right",
+    "primary", "secondary",
+    "ability1", "ability2", "ability3",
+    "interact", "jump", "sprint", "crouch",
+    "inventory1", "map"
+  ],
+  "nativeNames": {
+    "forward": "Axis_MoveForward",
+    "back": "Axis_MoveForward",
+    "left": "Axis_MoveRight",
+    "right": "Axis_MoveRight",
+    "primary": "Action_Attack",
+    "secondary": "Action_Aim",
+    "ability1": "Action_SwitchWeapon",
+    "ability2": "Action_Throw",
+    "ability3": "Action_Reload",
+    "interact": "Action_Interact",
+    "jump": "Action_Jump",
+    "sprint": "Action_Sprint",
+    "crouch": "Action_Crouch",
+    "inventory1": "Action_Hotbar1",
+    "map": "Action_Map"
+  },
+  "defaults": {
+    "forward": "W",
+    "left": "A",
+    "back": "S",
+    "right": "D",
+    "primary": "Mouse 1",
+    "secondary": "Mouse 2",
+    "ability1": "Q",
+    "ability2": "G",
+    "ability3": "R",
+    "interact": "E",
+    "jump": "Space",
+    "sprint": "Left Shift",
+    "crouch": "Left Ctrl",
+    "inventory1": "1",
+    "map": "M"
+  },
+  "canWrite": true,
+  "applyMethod": "restart",
+  "cloudSync": false,
+  "defaultStrategy": "ue4-traditional-inputini",
+  "writeStrategies": [
+    {
+      "id": "ue4-traditional-inputini",
+      "name": "传统 Input.ini",
+      "description": "修改 Saved/Config/*/Input.ini 中的 AxisMappings 和 ActionMappings。适用于使用传统输入系统的老 UE4 游戏（如 ARK、Rust 等）。",
+      "configFormat": "ue4-ini",
+      "configFileName": "Input.ini",
+      "reliability": "medium",
+      "implemented": true,
+      "notes": "使用 Enhanced Input 系统的新 UE4/UE5 游戏（如 Grounded 2）可能不生效，请尝试其他方案。"
+    },
+    {
+      "id": "ue4-enhanced-input-uasset",
+      "name": "Enhanced Input (.uasset)",
+      "description": "修改游戏目录下的 InputMappingContext.uasset 二进制资产文件。适用于使用 Enhanced Input 系统的新 UE4/UE5 游戏。",
+      "configFormat": "ue4-uasset",
+      "configFileName": "*.uasset",
+      "reliability": "low",
+      "implemented": false,
+      "notes": "二进制格式解析复杂，暂未实现。开发中，敬请期待。"
+    }
+  ],
+  "notes": "UE4/UE5 通用引擎模板。自动检测到 Saved/Config/*/Input.ini 的游戏使用此模板。动作名为 UE4 标准命名，不同游戏可能不同，请在游戏内确认或修改。提供多种写入方案，如传统 Input.ini 不生效请尝试其他方案。"
+}

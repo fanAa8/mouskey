@@ -1,0 +1,520 @@
+{
+  "version": "1.0",
+  "generatedAt": "2026-09-15",
+  "sources": [
+    {
+      "id": "pcgamingwiki",
+      "name": "PCGamingWiki",
+      "url": "https://www.pcgamingwiki.com",
+      "note": "每款游戏条目的 Game data → Configuration file(s) location；键位通常在配置目录内 Input/Keybind 相关文件。CC BY-NC-SA。"
+    },
+    {
+      "id": "ludusavi-manifest",
+      "name": "Ludusavi Manifest",
+      "url": "https://github.com/mtkennerly/ludusavi-manifest",
+      "note": "由 PCGamingWiki 编译的存档/配置路径清单（CC0/MIT）。本项目 src/data/ludusavi-games.json 已内置 9442 款。偏备份路径，不保证区分键位文件。"
+    },
+    {
+      "id": "community",
+      "name": "社区/游戏内验证",
+      "url": "",
+      "note": "常见引擎约定 + 社区讨论中反复出现的路径；标注 confidence。"
+    }
+  ],
+  "engineDefaults": [
+    {
+      "id": "ue4-legacy",
+      "name": "UE4/UE5 传统 Input",
+      "format": "ue4-ini",
+      "paths": [
+        "%LOCALAPPDATA%/<GameName>/Saved/Config/Windows/Input.ini",
+        "%LOCALAPPDATA%/<GameName>/Saved/Config/WindowsNoEditor/Input.ini"
+      ],
+      "keybindHints": ["AxisMappings", "ActionMappings"],
+      "howTo": "读改写 Input.ini 中 AxisMappings/ActionMappings 的 Key=W/A/S/D → E/S/D/F。保留文件其他段。",
+      "esdfSupport": "high",
+      "confidence": "high"
+    },
+    {
+      "id": "ue4-enhanced",
+      "name": "UE4/UE5 Enhanced Input",
+      "format": "uasset",
+      "paths": [
+        "<gameRoot>/<Game>_Data/Content/Input/**",
+        "%LOCALAPPDATA%/<GameName>/Saved/Config/**"
+      ],
+      "keybindHints": ["InputMappingContext", ".uasset"],
+      "howTo": "键位在 .uasset 二进制里，文本改 Input.ini 往往无效。需专用解析或游戏内改。",
+      "esdfSupport": "blocked",
+      "confidence": "medium"
+    },
+    {
+      "id": "unity-json",
+      "name": "Unity JSON/文本配置",
+      "format": "json",
+      "paths": [
+        "%APPDATA%/<CompanyName>/<GameName>/*.json",
+        "%USERPROFILE%/AppData/LocalLow/<CompanyName>/<GameName>/*.json"
+      ],
+      "keybindHints": ["input", "key", "bind", "control", "KMInput"],
+      "howTo": "常见为 Action→[\"k.W\"] 或 Action→\"W\"。字母键右移，保留其余字段。",
+      "esdfSupport": "medium",
+      "confidence": "medium"
+    },
+    {
+      "id": "source-cfg",
+      "name": "Source / Source2 cfg",
+      "format": "source-cfg",
+      "paths": [
+        "<steamUserdata>/<userId>/<appId>/remote/cfg/config.cfg",
+        "<steamUserdata>/<userId>/<appId>/local/cfg/config.cfg",
+        "<gameRoot>/cfg/config.cfg",
+        "<gameRoot>/csgo/cfg/config.cfg"
+      ],
+      "keybindHints": ["bind ", "+forward", "+back", "+moveleft", "+moveright"],
+      "howTo": "生成/合并 bind \"e\" \"+forward\" 等；或写 keyforge.cfg 并 autoexec 里 exec。",
+      "esdfSupport": "high",
+      "confidence": "high"
+    },
+    {
+      "id": "generic-ini",
+      "name": "通用 INI",
+      "format": "ini",
+      "paths": [
+        "%USERPROFILE%/Documents/<Game>/*.ini",
+        "%APPDATA%/<Game>/*.ini",
+        "<gameRoot>/*.ini"
+      ],
+      "keybindHints": ["[controls]", "move_up", "forward", "keybind"],
+      "howTo": "key=value 中单字母值右移；保留 section 与非键位字段。",
+      "esdfSupport": "medium",
+      "confidence": "medium"
+    }
+  ],
+  "games": [
+    {
+      "steamAppId": "730",
+      "name": "Counter-Strike 2",
+      "engine": "source2",
+      "format": "source-cfg",
+      "paths": [
+        "%PROGRAMFILES(X86)%/Steam/userdata/<userId>/730/remote/cfg/config.cfg",
+        "%PROGRAMFILES(X86)%/Steam/userdata/<userId>/730/local/cfg/config.cfg"
+      ],
+      "howTo": "bind \"w\" \"+forward\" 等；建议写 autoexec.cfg 或 keyforge.cfg + exec。",
+      "esdfSupport": "high",
+      "confidence": "high",
+      "source": "pcgamingwiki+community"
+    },
+    {
+      "steamAppId": "570",
+      "name": "Dota 2",
+      "engine": "source2",
+      "format": "source-cfg",
+      "paths": [
+        "%PROGRAMFILES(X86)%/Steam/userdata/<userId>/570/remote/cfg/config.cfg"
+      ],
+      "howTo": "英雄技能多为 QWER 语义键，整体右移需谨慎；移动是鼠标。优先单独改技能键。",
+      "esdfSupport": "low",
+      "confidence": "high",
+      "source": "pcgamingwiki+community"
+    },
+    {
+      "name": "League of Legends",
+      "engine": "riot",
+      "format": "riot-persisted-json",
+      "paths": [
+        "<WeGame or Riot>/英雄联盟/Game/Config/PersistedSettings.json",
+        "<WeGame or Riot>/英雄联盟/Game/Config/input.ini",
+        "%USERPROFILE%/Documents/League of Legends/Config/PersistedSettings.json"
+      ],
+      "howTo": "传统模式改 GameEvents；WASD 模式改 WASD 段。本项目已有 LCU API + 本地写入。",
+      "esdfSupport": "high",
+      "confidence": "high",
+      "source": "verified",
+      "notes": "腾讯/WeGame 版优先 LCU；纯本地文件路径因安装方式而异。"
+    },
+    {
+      "steamAppId": "322330",
+      "name": "Don't Starve Together",
+      "engine": "klei",
+      "format": "ini",
+      "paths": [
+        "%USERPROFILE%/Documents/Klei/DoNotStarveTogether/settings.ini"
+      ],
+      "howTo": "[controls] / [MUTABLE] 下 move_* 等键值。",
+      "esdfSupport": "medium",
+      "confidence": "medium",
+      "source": "pcgamingwiki+ludusavi"
+    },
+    {
+      "steamAppId": "1245620",
+      "name": "ELDEN RING",
+      "engine": "fromsoft",
+      "format": "ini",
+      "paths": [
+        "%APPDATA%/EldenRing/GraphicsConfig.xml",
+        "%APPDATA%/EldenRing/*"
+      ],
+      "howTo": "键位多半在游戏内/存档侧，配置目录偏画面。自动 ESDF 不可靠。",
+      "esdfSupport": "low",
+      "confidence": "medium",
+      "source": "pcgamingwiki"
+    },
+    {
+      "steamAppId": "1174180",
+      "name": "Red Dead Redemption 2",
+      "engine": "rage",
+      "format": "ini",
+      "paths": [
+        "%USERPROFILE%/Documents/Rockstar Games/Red Dead Redemption 2/Settings/system.xml"
+      ],
+      "howTo": "system.xml 含键位映射，XML 结构，需专用解析器。",
+      "esdfSupport": "low",
+      "confidence": "medium",
+      "source": "pcgamingwiki"
+    },
+    {
+      "steamAppId": "271590",
+      "name": "Grand Theft Auto V",
+      "engine": "rage",
+      "format": "xml",
+      "paths": [
+        "%USERPROFILE%/Documents/Rockstar Games/GTA V/settings.xml",
+        "%USERPROFILE%/Documents/Rockstar Games/GTA V/profile/*"
+      ],
+      "howTo": "settings.xml 含键位；profile 内另有绑定。结构复杂。",
+      "esdfSupport": "low",
+      "confidence": "medium",
+      "source": "pcgamingwiki"
+    },
+    {
+      "steamAppId": "1085660",
+      "name": "Destiny 2",
+      "engine": "tiger",
+      "format": "binary",
+      "paths": [
+        "%APPDATA%/Bungie/DestinyPC/prefs/cvars.xml"
+      ],
+      "howTo": "cvars.xml 可含部分输入设置；完整键位常在服务器/本地缓存，自动写入风险高。",
+      "esdfSupport": "low",
+      "confidence": "low",
+      "source": "community"
+    },
+    {
+      "steamAppId": "230410",
+      "name": "Warframe",
+      "engine": "evolution",
+      "format": "ini",
+      "paths": [
+        "%LOCALAPPDATA%/Warframe/*"
+      ],
+      "howTo": "EE.cfg 等本地缓存格式不公开，改键位建议游戏内。",
+      "esdfSupport": "low",
+      "confidence": "low",
+      "source": "community"
+    },
+    {
+      "steamAppId": "359550",
+      "name": "Tom Clancy's Rainbow Six Siege",
+      "engine": "anvil",
+      "format": "ini",
+      "paths": [
+        "%USERPROFILE%/Documents/My Games/Rainbow Six - Siege/*/GameSettings.ini"
+      ],
+      "howTo": "GameSettings.ini 含键位段；改后可能被云端/客户端校验覆盖。",
+      "esdfSupport": "medium",
+      "confidence": "medium",
+      "source": "pcgamingwiki"
+    },
+    {
+      "steamAppId": "578080",
+      "name": "PUBG: BATTLEGROUNDS",
+      "engine": "ue4",
+      "format": "ue4-ini",
+      "paths": [
+        "%LOCALAPPDATA%/TslGame/Saved/Config/Windows/Input.ini",
+        "%LOCALAPPDATA%/TslGame/Saved/Config/Windows/GameUserSettings.ini"
+      ],
+      "howTo": "UE4 Input.ini Axis/ActionMappings；注意反作弊与云同步。",
+      "esdfSupport": "medium",
+      "confidence": "medium",
+      "source": "pcgamingwiki+community"
+    },
+    {
+      "steamAppId": "252490",
+      "name": "Rust",
+      "engine": "unity",
+      "format": "cfg",
+      "paths": [
+        "%USERPROFILE%/Documents/My Games/Rust/cfg/client.cfg",
+        "<steamapps>/common/Rust/cfg/client.cfg"
+      ],
+      "howTo": "client.cfg 中 bind 类命令；需确认当前版本键位键名。",
+      "esdfSupport": "medium",
+      "confidence": "medium",
+      "source": "pcgamingwiki+community"
+    },
+    {
+      "steamAppId": "346110",
+      "name": "ARK: Survival Evolved",
+      "engine": "ue4",
+      "format": "ue4-ini",
+      "paths": [
+        "%LOCALAPPDATA%/ShooterGame/Saved/Config/Windows/Input.ini"
+      ],
+      "howTo": "标准 UE4 Input.ini，可走通用 Axis/ActionMappings 右移。",
+      "esdfSupport": "high",
+      "confidence": "high",
+      "source": "pcgamingwiki"
+    },
+    {
+      "steamAppId": "892970",
+      "name": "Valheim",
+      "engine": "unity",
+      "format": "unity-prefs",
+      "paths": [
+        "%USERPROFILE%/AppData/LocalLow/IronGate/Valheim/*"
+      ],
+      "howTo": "键位多在 prefs/内部存储，文本可解析性因版本而异。",
+      "esdfSupport": "low",
+      "confidence": "low",
+      "source": "pcgamingwiki"
+    },
+    {
+      "steamAppId": "1623730",
+      "name": "Palworld",
+      "engine": "ue5",
+      "format": "ue4-ini",
+      "paths": [
+        "%LOCALAPPDATA%/Pal/Saved/Config/Windows/Input.ini",
+        "%LOCALAPPDATA%/Pal/Saved/SaveGames/*"
+      ],
+      "howTo": "优先试 UE4/UE5 Input.ini；若无 Key 映射则 Enhanced Input，自动迁移动效有限。",
+      "esdfSupport": "medium",
+      "confidence": "medium",
+      "source": "community"
+    },
+    {
+      "steamAppId": "553850",
+      "name": "Helldivers 2",
+      "engine": "autodesk",
+      "format": "binary",
+      "paths": [
+        "%USERPROFILE%/AppData/Roaming/Helldivers/*",
+        "%APPDATA%/Arrowhead/Helldivers/*"
+      ],
+      "howTo": "键位常在二进制/专有格式，文本自动迁移困难。",
+      "esdfSupport": "low",
+      "confidence": "low",
+      "source": "community"
+    },
+    {
+      "steamAppId": "236390",
+      "name": "War Thunder",
+      "engine": "dagor",
+      "format": "blk",
+      "paths": [
+        "%USERPROFILE%/Documents/My Games/War Thunder/*"
+      ],
+      "howTo": "input.blk 等专有文本；结构特殊，需专用解析。",
+      "esdfSupport": "low",
+      "confidence": "low",
+      "source": "pcgamingwiki"
+    },
+    {
+      "steamAppId": "105600",
+      "name": "Terraria",
+      "engine": "fna",
+      "format": "json",
+      "paths": [
+        "%USERPROFILE%/Documents/My Games/Terraria/config.json",
+        "%USERPROFILE%/Documents/My Games/Terraria/controls.json"
+      ],
+      "howTo": "controls.json 为键位；键名多为数字/名称，非 WASD 轴，右移需映射表。",
+      "esdfSupport": "medium",
+      "confidence": "medium",
+      "source": "pcgamingwiki"
+    },
+    {
+      "steamAppId": "413150",
+      "name": "Stardew Valley",
+      "engine": "monogame",
+      "format": "json",
+      "paths": [
+        "%APPDATA%/StardewValley/StartupPreferences"
+      ],
+      "howTo": "StartupPreferences 非标准 JSON，键位字段有限；建议游戏内改。",
+      "esdfSupport": "low",
+      "confidence": "low",
+      "source": "pcgamingwiki"
+    },
+    {
+      "steamAppId": "1091500",
+      "name": "Cyberpunk 2077",
+      "engine": "redengine",
+      "format": "json",
+      "paths": [
+        "%USERPROFILE%/Saved Games/CD Projekt Red/Cyberpunk 2077/*"
+      ],
+      "howTo": "inputUserMappings 等在用户设置里；JSON 结构可解析但动作名复杂。",
+      "esdfSupport": "medium",
+      "confidence": "medium",
+      "source": "pcgamingwiki"
+    },
+    {
+      "steamAppId": "1248130",
+      "name": "Hades",
+      "engine": "super",
+      "format": "json",
+      "paths": [
+        "%LOCALAPPDATA%/Supergiant Games/Hades/*"
+      ],
+      "howTo": "键位多在游戏内存档偏好，配置文件覆盖不全。",
+      "esdfSupport": "low",
+      "confidence": "low",
+      "source": "pcgamingwiki"
+    },
+    {
+      "steamAppId": "594650",
+      "name": "Hunt: Showdown",
+      "engine": "cryengine",
+      "format": "xml",
+      "paths": [
+        "%USERPROFILE%/Saved Games/Hunt Showdown/*"
+      ],
+      "howTo": "attributes.xml / user profile XML；结构需专用解析。",
+      "esdfSupport": "low",
+      "confidence": "medium",
+      "source": "pcgamingwiki"
+    },
+    {
+      "steamAppId": "227300",
+      "name": "Euro Truck Simulator 2",
+      "engine": "prism",
+      "format": "cfg",
+      "paths": [
+        "%USERPROFILE%/Documents/Euro Truck Simulator 2/controls.sii"
+      ],
+      "howTo": "controls.sii 为 SCS 专有文本，可解析但键码是数字。",
+      "esdfSupport": "low",
+      "confidence": "medium",
+      "source": "pcgamingwiki"
+    },
+    {
+      "steamAppId": "1938090",
+      "name": "Call of Duty HQ / MW series",
+      "engine": "iw",
+      "format": "ini",
+      "paths": [
+        "%USERPROFILE%/Documents/Call of Duty/players/*"
+      ],
+      "howTo": "options.3.cod22.cst 等按键档；格式版本相关，自动写入需谨慎。",
+      "esdfSupport": "low",
+      "confidence": "low",
+      "source": "community"
+    },
+    {
+      "steamAppId": "2358720",
+      "name": "Black Myth: Wukong",
+      "engine": "ue5",
+      "format": "ue4-ini",
+      "paths": [
+        "%LOCALAPPDATA%/b1/Saved/Config/Windows/Input.ini"
+      ],
+      "howTo": "可试 UE5 Input.ini；若 Enhanced Input 则有限。",
+      "esdfSupport": "medium",
+      "confidence": "medium",
+      "source": "community"
+    },
+    {
+      "steamAppId": "1627720",
+      "name": "Lies of P",
+      "engine": "ue4",
+      "format": "ue4-ini",
+      "paths": [
+        "%LOCALAPPDATA%/LOP/Saved/Config/Windows/Input.ini"
+      ],
+      "howTo": "UE4 Input.ini 通用规则。",
+      "esdfSupport": "high",
+      "confidence": "medium",
+      "source": "pcgamingwiki"
+    },
+    {
+      "steamAppId": "1245620-steam",
+      "name": "ELDEN RING (Steam note)",
+      "engine": "fromsoft",
+      "format": "ini",
+      "paths": ["%APPDATA%/EldenRing/"],
+      "howTo": "同 ELDEN RING。",
+      "esdfSupport": "low",
+      "confidence": "medium",
+      "source": "pcgamingwiki"
+    },
+    {
+      "name": "Battlerite",
+      "steamAppId": "504370",
+      "engine": "unity",
+      "format": "json",
+      "paths": [
+        "%APPDATA%/Battlerite/KMInput.json"
+      ],
+      "howTo": "\"Move.Y.Pos\": [\"k.E\"] 风格；字母大写 k.X；read-modify-write。",
+      "esdfSupport": "high",
+      "confidence": "high",
+      "source": "verified"
+    },
+    {
+      "steamAppId": "289070",
+      "name": "Civilization VI",
+      "engine": "firaxis",
+      "format": "json",
+      "paths": [
+        "%LOCALAPPDATA%/Firaxis Games/Sid Meier's Civilization VI/InputSettings.json"
+      ],
+      "howTo": "KBMouse 条目 data=LOC_OPTIONS_KEY_W → E 等。",
+      "esdfSupport": "high",
+      "confidence": "high",
+      "source": "verified"
+    },
+    {
+      "steamAppId": "1086940",
+      "name": "Baldur's Gate 3",
+      "engine": "divinity",
+      "format": "json",
+      "paths": [
+        "%LOCALAPPDATA%/Larian Studios/Baldur's Gate 3/PlayerProfiles/*/input.lsx"
+      ],
+      "howTo": "input.lsx 为 Larian XML；动作多、手柄优先，自动 ESDF 收益有限。",
+      "esdfSupport": "low",
+      "confidence": "medium",
+      "source": "pcgamingwiki"
+    },
+    {
+      "steamAppId": "1966720",
+      "name": "Lethal Company",
+      "engine": "unity",
+      "format": "json",
+      "paths": [
+        "%USERPROFILE%/AppData/LocalLow/Zeekerss/Lethal Company/*"
+      ],
+      "howTo": "Unity LocalLow；键位文件名随版本变化，可尝试通用 JSON 右移。",
+      "esdfSupport": "medium",
+      "confidence": "low",
+      "source": "community"
+    },
+    {
+      "steamAppId": "1938090-cod",
+      "name": "Call of Duty (generic players folder)",
+      "engine": "iw",
+      "format": "ini",
+      "paths": [
+        "%USERPROFILE%/Documents/Call of Duty/players/"
+      ],
+      "howTo": "扫描 players 下 *.cst / *.ini 找 bind/键位字段。",
+      "esdfSupport": "low",
+      "confidence": "low",
+      "source": "community"
+    }
+  ]
+}

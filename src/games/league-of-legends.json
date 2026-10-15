@@ -132,6 +132,29 @@
   "canWrite": true,
   "applyMethod": "restart",
   "cloudSync": true,
+  "defaultStrategy": "lol-lcu-cloud",
+  "writeStrategies": [
+    {
+      "id": "lol-lcu-cloud",
+      "name": "LCU API 云端同步",
+      "description": "通过英雄联盟客户端 LCU API 直接修改游戏内设置，自动同步到云端。需要游戏客户端正在运行。",
+      "configFormat": "riot-lcu-api",
+      "configFileName": "（通过API写入，无本地文件）",
+      "reliability": "high",
+      "implemented": true,
+      "notes": "推荐方案。修改后在游戏内按 ESC→设置→热键 可看到已生效，无需重启游戏。"
+    },
+    {
+      "id": "lol-persisted-local",
+      "name": "PersistedSettings.json 本地",
+      "description": "直接修改 Game/Config/PersistedSettings.json 文件。修改后需要重启游戏才能生效。",
+      "configFormat": "riot-persisted-json",
+      "configFileName": "PersistedSettings.json",
+      "reliability": "medium",
+      "implemented": true,
+      "notes": "备用方案。如果 LCU API 不可用（游戏未运行），可使用此方案。修改后重启游戏生效。"
+    }
+  ],
   "lcuApi": {
     "supported": true,
     "inputSettingsEndpoint": "/lol-game-settings/v1/input-settings",

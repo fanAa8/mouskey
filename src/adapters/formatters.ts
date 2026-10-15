@@ -114,17 +114,118 @@ export function formatLolConfig(patchSet: PatchSet): string {
   return lines.join('\n')
 }
 
+// ─── UE4/UE5: Input.ini AxisMappings / ActionMappings format ───────────────
+
+/** Convert our normalized key names (MOUSE1, SPACE, W) to UE4 key names (LeftMouseButton, SpaceBar, W) */
+export function normalizeKeyToUe4(key: string): string {
+  const k = key.trim()
+  // Mouse buttons
+  if (k === 'Mouse 1' || k === 'MOUSE1') return 'LeftMouseButton'
+  if (k === 'Mouse 2' || k === 'MOUSE2') return 'RightMouseButton'
+  if (k === 'Mouse 3' || k === 'MOUSE3' || k === 'Mouse Wheel') return 'MiddleMouseButton'
+  if (k === 'Mouse 4' || k === 'MOUSE4') return 'ThumbMouseButton'
+  if (k === 'Mouse 5' || k === 'MOUSE5') return 'ThumbMouseButton2'
+  // Special keys
+  if (k === 'Space' || k === 'SPACE') return 'SpaceBar'
+  if (k === 'Tab' || k === 'TAB') return 'Tab'
+  if (k === 'Esc' || k === 'ESCAPE') return 'Escape'
+  if (k === 'Enter' || k === 'ENTER') return 'Enter'
+  if (k === 'Backspace' || k === 'BACKSPACE') return 'BackSpace'
+  if (k === 'Shift' || k === 'SHIFT') return 'LeftShift'
+  if (k === 'Shift R' || k === 'RSHIFT') return 'RightShift'
+  if (k === 'Ctrl' || k === 'CTRL') return 'LeftControl'
+  if (k === 'Ctrl R' || k === 'RCTRL') return 'RightControl'
+  if (k === 'Alt' || k === 'ALT') return 'LeftAlt'
+  if (k === 'Alt R' || k === 'RALT') return 'RightAlt'
+  if (k === 'Caps' || k === 'CAPSLOCK') return 'CapsLock'
+  // F keys
+  if (/^F\d+$/.test(k)) return k
+  // Single char keys: uppercase
+  if (k.length === 1) return k.toUpperCase()
+  return k
+}
+
+/**
+ * Format a PatchSet as UE4/UE5 Input.ini content.
+ * Movement (forward/back/left/right) becomes AxisMappings with Scale,
+ * everything else becomes ActionMappings.
+ */
+export function formatUe4Config(patchSet: PatchSet): string {
+  const lines: string[] = [
+    '; Keyforge generated Input.ini',
+    `; Game: ${patchSet.gameName}`,
+    `; Generated: ${new Date().toISOString()}`,
+    '; UE4/UE5 Enhanced Input / Legacy Input format',
+    '',
+    '[/Script/Engine.InputSettings]',
+  ]
+
+  // Axis mappings: movement (forward/back share one axis, left/right share another)
+  const axisActions = new Map<string, { positive?: string; negative?: string }>()
+  const actionMappings: { name: string; key: string }[] = []
+
+  for (const patch of patchSet.patches) {
+    const ue4Key = normalizeKeyToUe4(patch.presetValue)
+    const nativeName = patch.nativeKey
+    if (!nativeName) continue
+
+    if (patch.actionId === 'forward') {
+      if (!axisActions.has(nativeName)) axisActions.set(nativeName, {})
+      axisActions.get(nativeName)!.positive = ue4Key
+    } else if (patch.actionId === 'back') {
+      if (!axisActions.has(nativeName)) axisActions.set(nativeName, {})
+      axisActions.get(nativeName)!.negative = ue4Key
+    } else if (patch.actionId === 'right') {
+      if (!axisActions.has(nativeName)) axisActions.set(nativeName, {})
+      axisActions.get(nativeName)!.positive = ue4Key
+    } else if (patch.actionId === 'left') {
+      if (!axisActions.has(nativeName)) axisActions.set(nativeName, {})
+      axisActions.get(nativeName)!.negative = ue4Key
+    } else {
+      actionMappings.push({ name: nativeName, key: ue4Key })
+    }
+  }
+
+  // Write axis mappings
+  if (axisActions.size > 0) {
+    lines.push('')
+    lines.push('; --- Axis Mappings (movement) ---')
+    for (const [axisName, keys] of axisActions) {
+      if (keys.positive) {
+        lines.push(`AxisMappings=(AxisName="${axisName}",Scale=1.000000,Key=${keys.positive})`)
+      }
+      if (keys.negative) {
+        lines.push(`AxisMappings=(AxisName="${axisName}",Scale=-1.000000,Key=${keys.negative})`)
+      }
+    }
+  }
+
+  // Write action mappings
+  if (actionMappings.length > 0) {
+    lines.push('')
+    lines.push('; --- Action Mappings ---')
+    for (const { name, key } of actionMappings) {
+      lines.push(`ActionMappings=(ActionName="${name}",Key=${key})`)
+    }
+  }
+
+  lines.push('')
+  return lines.join('\n')
+}
+
 // ─── Dispatcher (data-driven via configFormat) ─────────────────────────────
 
-export function formatNativeConfig(patchSet: PatchSet): string {
-  // Look up the game definition to get configFormat
+export function formatNativeConfig(patchSet: PatchSet, overrideFormat?: string): string {
+  // Look up the game definition to get configFormat, unless overridden
   const game = getGame(patchSet.gameId)
-  const format = game.configFormat
+  const format = overrideFormat ?? game.configFormat
 
   // Dispatch by configFormat (data-driven)
   switch (format) {
     case 'source-cfg':
       return formatCs2Config(patchSet)
+    case 'ue4-ini':
+      return formatUe4Config(patchSet)
     case 'ini':
       // INI format varies by game; use gameId for exact syntax
       return formatByGameId(patchSet)

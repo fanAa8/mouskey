@@ -4,6 +4,8 @@ const path = require('path')
 const fs = require('fs')
 const { spawn } = require('child_process')
 const http = require('http')
+// Shared API handlers (game detection, config write, presets, LoL) — converted from vite.config.ts
+const api = require('./api-handlers.cjs')
 
 const PORT = 4174
 const SSE_PORT = 4175
@@ -76,17 +78,66 @@ let overlayMouseSettings = { x: -30, y: 40, width: 200, height: 220 }
 let overlayCustomKeys = ['W', 'A', 'S', 'D', 'Space']
 let overlayKeyboardSettings = { scale: 100, opacity: 100, highlightColor: '#00d4ff', highlightOpacity: 100 }
 let overlayTheme = 'white'
+let overlayTopmostTimer = null
+
+// ─── Force overlay above fullscreen / games (Windows HWND_TOPMOST) ──────────
+// Exclusive fullscreen (not borderless) often still cannot show third-party
+// windows; borderless/windowed fullscreen will. We re-assert topmost because
+// many games steal the z-order when they gain focus.
+function forceOverlayTopmost() {
+  if (!overlayWindow || overlayWindow.isDestroyed() || !overlayWindow.isVisible()) return
+  try {
+    // Highest Electron level on Windows
+    overlayWindow.setAlwaysOnTop(true, 'screen-saver')
+    overlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  } catch { /* ignore */ }
+
+  try {
+    const koffi = require('koffi')
+    const user32 = koffi.load('user32.dll')
+    // Same style as GetAsyncKeyState polling elsewhere in this file
+    const SetWindowPos = user32.func('bool SetWindowPos(int64 hWnd, int64 hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags)')
+    // HWND_TOPMOST = -1; keep position/size, do not activate (don't steal game focus)
+    const SWP_NOSIZE = 0x0001
+    const SWP_NOMOVE = 0x0002
+    const SWP_NOACTIVATE = 0x0010
+    const SWP_SHOWWINDOW = 0x0040
+    const flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW
+    const handle = overlayWindow.getNativeWindowHandle()
+    const hwnd = process.arch === 'ia32'
+      ? handle.readUInt32LE(0)
+      : Number(handle.readBigUInt64LE(0))
+    SetWindowPos(hwnd, -1, 0, 0, 0, 0, flags)
+  } catch { /* koffi path optional */ }
+}
+
+function startOverlayTopmostKeeper() {
+  stopOverlayTopmostKeeper()
+  // Re-assert frequently enough to beat most games, light enough to ignore
+  overlayTopmostTimer = setInterval(() => {
+    forceOverlayTopmost()
+  }, 1500)
+}
+
+function stopOverlayTopmostKeeper() {
+  if (overlayTopmostTimer) {
+    clearInterval(overlayTopmostTimer)
+    overlayTopmostTimer = null
+  }
+}
 
 // Create overlay window (always-on-top, transparent, frameless)
 function createOverlayWindow() {
   if (overlayWindow) {
     overlayWindow.show()
+    forceOverlayTopmost()
+    startOverlayTopmostKeeper()
     return overlayWindow
   }
 
   const { screen } = require('electron')
   const primaryDisplay = screen.getPrimaryDisplay()
-  const { width, height } = primaryDisplay.workAreaSize
+  const { width, height } = primaryDisplay.size
   const defaultWidth = 530
   const defaultHeight = 150
 
@@ -123,10 +174,13 @@ function createOverlayWindow() {
     alwaysOnTop: true,
     resizable: false,
     skipTaskbar: true,
-    focusable: true,
+    // Keep clickability for lock/hide buttons, but avoid stealing keyboard focus
+    focusable: false,
     hasShadow: false,
     show: true,
     backgroundColor: '#00000000',
+    // Windows: small overlay toolbar sits better over other windows
+    type: process.platform === 'win32' ? 'toolbar' : undefined,
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false,
@@ -134,7 +188,8 @@ function createOverlayWindow() {
     },
   })
 
-  overlayWindow.setAlwaysOnTop(true, 'floating')
+  // screen-saver is the highest alwaysOnTop level Electron exposes on Windows
+  overlayWindow.setAlwaysOnTop(true, 'screen-saver')
   overlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
 
   // Save position when window is moved
@@ -144,6 +199,7 @@ function createOverlayWindow() {
 
   // Save settings when window is closed
   overlayWindow.on('closed', () => {
+    stopOverlayTopmostKeeper()
     saveOverlaySettings()
     overlayWindow = null
   })
@@ -175,7 +231,8 @@ function createOverlayWindow() {
       }
     }, 100)
     overlayWindow.show()
-    overlayWindow.focus()
+    forceOverlayTopmost()
+    startOverlayTopmostKeeper()
   })
 
   overlayWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
@@ -183,13 +240,22 @@ function createOverlayWindow() {
   })
 
   overlayWindow.on('closed', () => {
+    stopOverlayTopmostKeeper()
     overlayWindow = null
   })
+
+  // Re-assert topmost when something tries to cover it
+  overlayWindow.on('show', () => {
+    forceOverlayTopmost()
+    startOverlayTopmostKeeper()
+  })
+  overlayWindow.on('focus', () => forceOverlayTopmost())
 
   // Handle IPC from overlay
   const { ipcMain } = require('electron')
   ipcMain.on('close-overlay', () => {
     if (overlayWindow) {
+      stopOverlayTopmostKeeper()
       overlayWindow.hide()
     }
   })
@@ -250,9 +316,12 @@ function toggleOverlay() {
   if (overlayWindow) {
     if (overlayWindow.isVisible()) {
       saveOverlaySettings()
+      stopOverlayTopmostKeeper()
       overlayWindow.hide()
     } else {
       overlayWindow.show()
+      forceOverlayTopmost()
+      startOverlayTopmostKeeper()
       // Don't reset position - keep user's last position
     }
   } else {
@@ -265,7 +334,7 @@ function toggleOverlay() {
 function startSseServer() {
   if (sseServer) return
 
-  sseServer = http.createServer((req, res) => {
+  sseServer = http.createServer(async (req, res) => {
     // CORS headers
     res.setHeader('Access-Control-Allow-Origin', '*')
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
@@ -335,6 +404,7 @@ function startSseServer() {
     if (req.url === '/api/overlay/hide' && req.method === 'POST') {
       if (overlayWindow) {
         saveOverlaySettings()
+        stopOverlayTopmostKeeper()
         overlayWindow.hide()
       }
       res.writeHead(200, { 'Content-Type': 'application/json' })
@@ -541,6 +611,190 @@ function startSseServer() {
       return
     }
 
+    // ─── Game adapter & preset API routes (shared from api-handlers.cjs) ──────
+    const urlPath = req.url.split('?')[0]
+    const query = new URL(req.url, 'http://127.0.0.1').searchParams
+
+    // Helper: read POST body as JSON
+    const readBody = () => new Promise((resolve) => {
+      let body = ''
+      req.on('data', (chunk) => { body += chunk })
+      req.on('end', () => {
+        try { resolve(body ? JSON.parse(body) : {}) } catch { resolve({}) }
+      })
+    })
+
+    const jsonOk = (data, code = 200) => {
+      res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' })
+      res.end(JSON.stringify(data))
+    }
+
+    // GET /api/adapters/detect?gameId=xxx
+    if (urlPath === '/api/adapters/detect' && req.method === 'GET') {
+      try { jsonOk(api.detectGame(query.get('gameId') ?? '')) }
+      catch (err) { jsonOk({ success: false, message: `检测失败：${String(err)}` }, 500) }
+      return
+    }
+
+    // GET /api/adapters/detect-all
+    if (urlPath === '/api/adapters/detect-all' && req.method === 'GET') {
+      try { jsonOk(api.detectAllGames()) }
+      catch (err) { jsonOk({ success: false, message: `检测失败：${String(err)}` }, 500) }
+      return
+    }
+
+    // GET /api/adapters/custom/list
+    if (urlPath === '/api/adapters/custom/list' && req.method === 'GET') {
+      try {
+        const adapters = api.listCustomAdapters()
+        jsonOk({ success: true, adapters, count: adapters.length, dir: api.getCustomAdaptersDir() })
+      } catch (err) { jsonOk({ success: false, message: String(err) }, 500) }
+      return
+    }
+
+    // POST /api/adapters/generate
+    if (urlPath === '/api/adapters/generate' && req.method === 'POST') {
+      const body = await readBody()
+      try {
+        const result = api.generateAdapterFromLudusavi(body.steamAppId)
+        if (result.success && result.adapter) {
+          const saveResult = api.saveCustomAdapter(result.adapter)
+          jsonOk({ ...saveResult, adapter: result.adapter }, saveResult.success ? 200 : 400)
+        } else {
+          jsonOk({ success: false, message: result.message }, 400)
+        }
+      } catch (err) { jsonOk({ success: false, message: String(err) }, 500) }
+      return
+    }
+
+    // POST /api/adapters/custom/delete
+    if (urlPath === '/api/adapters/custom/delete' && req.method === 'POST') {
+      const body = await readBody()
+      try {
+        const result = api.deleteCustomAdapter(body.id)
+        jsonOk(result, result.success ? 200 : 400)
+      } catch (err) { jsonOk({ success: false, message: String(err) }, 500) }
+      return
+    }
+
+    // POST /api/adapters/write
+    if (urlPath === '/api/adapters/write' && req.method === 'POST') {
+      const body = await readBody()
+      try {
+        const result = await api.writeGameConfig(body)
+        jsonOk(result, result.success ? 200 : 400)
+      } catch (err) { jsonOk({ success: false, message: '无效的写入请求。' }, 400) }
+      return
+    }
+
+    // POST /api/adapters/esdf-migrate — one-click WASD→ESDF on the real config file
+    if (urlPath === '/api/adapters/esdf-migrate' && req.method === 'POST') {
+      const body = await readBody()
+      try {
+        const result = api.migrateEsdfConfig(body)
+        jsonOk(result, result.success ? 200 : 400)
+      } catch (err) {
+        jsonOk({ success: false, message: `ESDF 迁移失败：${String(err)}` }, 500)
+      }
+      return
+    }
+
+    // GET /api/adapters/esdf-candidates — list migratable games after scan
+    if (urlPath === '/api/adapters/esdf-candidates' && req.method === 'GET') {
+      try { jsonOk(api.listEsdfCandidates()) }
+      catch (err) { jsonOk({ success: false, message: `列出候选失败：${String(err)}` }, 500) }
+      return
+    }
+
+    // POST /api/adapters/esdf-preview — dry-run one game
+    if (urlPath === '/api/adapters/esdf-preview' && req.method === 'POST') {
+      const body = await readBody()
+      try { jsonOk(api.previewEsdfConfig(body)) }
+      catch (err) { jsonOk({ success: false, message: `预览失败：${String(err)}` }, 500) }
+      return
+    }
+
+    // POST /api/adapters/esdf-batch — batch migrate selected games
+    if (urlPath === '/api/adapters/esdf-batch' && req.method === 'POST') {
+      const body = await readBody()
+      try {
+        const result = api.batchMigrateEsdf(body)
+        jsonOk(result, result.success ? 200 : 400)
+      } catch (err) {
+        jsonOk({ success: false, message: `批量迁移失败：${String(err)}` }, 500)
+      }
+      return
+    }
+
+    // POST /api/adapters/read
+    if (urlPath === '/api/adapters/read' && req.method === 'POST') {
+      const body = await readBody()
+      try {
+        const result = api.readGameConfig(body)
+        jsonOk(result, result.success ? 200 : 400)
+      } catch (err) { jsonOk({ success: false, message: '读取游戏配置失败。' }, 400) }
+      return
+    }
+
+    // GET /api/adapters/lol/read
+    if (urlPath === '/api/adapters/lol/read' && req.method === 'GET') {
+      try { jsonOk(api.readLolSettings()) }
+      catch { jsonOk({ status: 'error', message: '读取本机英雄联盟设置时发生错误。' }, 500) }
+      return
+    }
+
+    // POST /api/adapters/lol/watch/start
+    if (urlPath === '/api/adapters/lol/watch/start' && req.method === 'POST') {
+      jsonOk(api.startLolSaveWatch())
+      return
+    }
+
+    // GET /api/adapters/lol/watch/status
+    if (urlPath === '/api/adapters/lol/watch/status' && req.method === 'GET') {
+      jsonOk(api.getLolWatchStatus())
+      return
+    }
+
+    // GET /api/presets/list
+    if (urlPath === '/api/presets/list' && req.method === 'GET') {
+      try { jsonOk(api.listLocalPresets()) }
+      catch (err) { jsonOk({ success: false, message: String(err) }, 500) }
+      return
+    }
+
+    // POST /api/presets/save
+    if (urlPath === '/api/presets/save' && req.method === 'POST') {
+      const body = await readBody()
+      try {
+        const result = api.saveLocalPreset(body)
+        jsonOk(result, result.success ? 200 : 400)
+      } catch (err) { jsonOk({ success: false, message: `无效的预设数据：${String(err)}` }, 400) }
+      return
+    }
+
+    // GET /api/presets/load?id=xxx
+    if (urlPath === '/api/presets/load' && req.method === 'GET') {
+      const id = query.get('id') ?? ''
+      if (!id) { jsonOk({ success: false, message: '缺少预设 ID。' }, 400); return }
+      try {
+        const result = api.loadLocalPreset(id)
+        jsonOk(result, result.success ? 200 : 404)
+      } catch (err) { jsonOk({ success: false, message: String(err) }, 500) }
+      return
+    }
+
+    // POST /api/presets/delete
+    if (urlPath === '/api/presets/delete' && (req.method === 'POST' || req.method === 'DELETE')) {
+      const body = await readBody()
+      const id = body.id ?? query.get('id') ?? ''
+      if (!id) { jsonOk({ success: false, message: '缺少预设 ID。' }, 400); return }
+      try {
+        const result = api.deleteLocalPreset(id)
+        jsonOk(result, result.success ? 200 : 400)
+      } catch (err) { jsonOk({ success: false, message: String(err) }, 500) }
+      return
+    }
+
     res.writeHead(404)
     res.end()
   })
@@ -744,7 +998,8 @@ function createWindow() {
     minWidth: 1000,
     minHeight: 700,
     backgroundColor: '#0a0e17',
-    title: 'Keyforge - 游戏键位管理器',
+    title: 'MousKey - 游戏键位管理器',
+    icon: resolveAsset('app-icon-256.png'),
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -792,20 +1047,34 @@ function createWindow() {
   mainWindow.on('closed', () => {
     mainWindow = null
   })
-
-  // Create system tray icon
-  createTray()
 }
 
 let tray = null
+function resolveAsset(file) {
+  // Production: resources/app/dist/<file>; Dev: resources/app/public/<file>
+  const distCandidate = path.join(appDir, 'dist', file)
+  if (fs.existsSync(distCandidate)) return distCandidate
+  return path.join(appDir, 'public', file)
+}
 function createTray() {
   try {
-    // Create a 16x16 cyan icon using data URL (properly generated PNG)
-    const iconDataUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAIUlEQVR4nGNQuvyOgRJMkWZ0A/6TiEcNGDVguBowMLkRABBwco8v3/xnAAAAAElFTkSuQmCC'
-    const trayIcon = nativeImage.createFromDataURL(iconDataUrl)
+    // Destroy any existing tray first to prevent duplicate icons
+    if (tray) {
+      try { tray.destroy() } catch { /* ignore */ }
+      tray = null
+    }
+    // Load the tray icon (32px PNG; Windows handles DPI scaling automatically)
+    let trayIcon = nativeImage.createFromPath(resolveAsset('tray-icon-32.png'))
+    if (trayIcon.isEmpty()) {
+      trayIcon = nativeImage.createFromPath(resolveAsset('tray-icon-16.png'))
+    }
+    if (trayIcon.isEmpty()) {
+      // Last-resort fallback: 16x16 solid icon so the tray still appears
+      trayIcon = nativeImage.createFromDataURL('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAIUlEQVR4nGNQuvyOgRJMkWZ0A/6TiEcNGDVguBowMLkRABBwco8v3/xnAAAAAElFTkSuQmCC')
+    }
 
     tray = new Tray(trayIcon)
-    tray.setToolTip('Keyforge - 游戏键位管理器')
+    tray.setToolTip('MousKey - 游戏键位管理器')
 
     const contextMenu = Menu.buildFromTemplate([
       { label: '显示主窗口', click: () => { if (mainWindow) { mainWindow.show(); mainWindow.focus() } else { createWindow() } } },
@@ -832,6 +1101,24 @@ function createTray() {
   }
 }
 
+// ─── Single instance lock: prevent duplicate processes / tray icons ────────
+const gotSingleInstanceLock = app.requestSingleInstanceLock()
+if (!gotSingleInstanceLock) {
+  // Another instance is already running — quit this one immediately
+  app.quit()
+} else {
+  app.on('second-instance', () => {
+    // User tried to launch a second copy: focus the existing window instead
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore()
+      mainWindow.show()
+      mainWindow.focus()
+    } else {
+      createWindow()
+    }
+  })
+}
+
 // App lifecycle
 app.whenReady().then(async () => {
   try {
@@ -852,6 +1139,9 @@ app.whenReady().then(async () => {
     startSseServer()
 
     createWindow()
+
+    // Create the system tray exactly once per app process
+    createTray()
 
     // Start global input monitoring in main process (has Windows message loop)
     startKeyboardListener()
@@ -880,10 +1170,15 @@ app.on('window-all-closed', () => {
 
 // Clean up on exit
 app.on('before-quit', () => {
+  stopOverlayTopmostKeeper()
   if (devServerProcess) {
     devServerProcess.kill()
   }
   if (mouseMonitorInterval) {
     clearInterval(mouseMonitorInterval)
+  }
+  if (tray) {
+    try { tray.destroy() } catch { /* ignore */ }
+    tray = null
   }
 })
